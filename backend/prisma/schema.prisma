@@ -1,0 +1,209 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PREPARING
+  READY
+  COMPLETED
+  PAYMENT_FAILED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  WALLET
+  CARD
+}
+
+enum PaymentStatus {
+  SUCCESS
+  FAILED
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+// ---------------------------------------------------------
+// MODELS
+// ---------------------------------------------------------
+
+model User {
+  id            Int       @id @default(autoincrement())
+  email         String    @unique
+  passwordHash  String
+  name          String?
+  phone         String?   @unique
+  gender        String?
+  loyaltyPoints Int       @default(0)
+  role          Role      @default(CUSTOMER)
+  isActive      Boolean   @default(true)
+
+  orders        Order[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Category {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?
+  imageUrl    String?
+  isActive    Boolean   @default(true)
+
+  products    Product[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Product {
+  id          Int           @id @default(autoincrement())
+  name        String
+  price       Int           // Đã đổi từ Float sang Int
+  imageUrl    String?
+  description String?       @db.Text
+  stock       Int
+  version     Int           @default(1)
+  isActive    Boolean       @default(true)
+
+  categoryId  Int?          // Nullable
+  category    Category?     @relation(fields: [categoryId], references: [id])
+
+  sizes       ProductSize[]
+  orderItems  OrderItem[]
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model ProductSize {
+  id          Int         @id @default(autoincrement())
+  name        String
+  surcharge   Int         // Đã đổi từ Float sang Int
+  isAvailable Boolean     @default(true)
+
+  productId   Int
+  product     Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  orderItems  OrderItem[]
+
+  @@unique([productId, name]) // Ràng buộc unique kết hợp
+}
+
+model Topping {
+  id                Int                @id @default(autoincrement())
+  name              String             @unique
+  price             Int                // Đã đổi từ Float sang Int
+  imageUrl          String?
+  isAvailable       Boolean            @default(true)
+
+  orderItemToppings OrderItemTopping[]
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+model Coupon {
+  id            Int          @id @default(autoincrement())
+  code          String       @unique
+  type          DiscountType
+  value         Int
+  minOrderValue Int
+  maxDiscount   Int?
+  usageLimit    Int?
+  usedCount     Int          @default(0)
+  startsAt      DateTime
+  expiresAt     DateTime
+  isActive      Boolean      @default(true)
+
+  orders        Order[]
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model Order {
+  id                  Int         @id @default(autoincrement())
+  userId              Int
+  couponId            Int?        // FK liên kết bảng Coupon
+  status              OrderStatus @default(PENDING)
+  total               Int         // Đã đổi từ Float sang Int
+  discountCode        String?
+  discountAmount      Int         @default(0) // Đã đổi từ Float sang Int
+  loyaltyPointsEarned Int         @default(0) // Tránh cộng điểm 2 lần
+
+  user        User               @relation(fields: [userId], references: [id])
+  coupon      Coupon?            @relation(fields: [couponId], references: [id])
+  orderItems  OrderItem[]
+  payments    Payment[]          // Quan hệ 1 - N với Payment
+
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt // Bổ sung theo yêu cầu Task 10
+}
+
+model OrderItem {
+  id            Int         @id @default(autoincrement())
+  orderId       Int
+  productId     Int
+  productSizeId Int?
+
+  // Các cột chụp lại tại thời điểm đặt hàng
+  productName   String
+  unitPrice     Int
+  sizeName      String?
+  sizeSurcharge Int         @default(0)
+
+  qty           Int
+  lineTotal     Int         // Đã đổi từ Float sang Int
+
+  order         Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product       Product            @relation(fields: [productId], references: [id])
+  size          ProductSize?       @relation(fields: [productSizeId], references: [id])
+  toppings      OrderItemTopping[]
+}
+
+model OrderItemTopping {
+  id           Int       @id @default(autoincrement())
+  orderItemId  Int
+  toppingId    Int
+
+  // Bản chụp thông tin topping tại thời điểm đặt
+  toppingName  String
+  price        Int       // Đã đổi từ Float sang Int
+
+  orderItem    OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  topping      Topping   @relation(fields: [toppingId], references: [id])
+}
+
+model Payment {
+  id             Int           @id @default(autoincrement())
+  orderId        Int           // Đã bỏ @unique để thành quan hệ 1-N (cho phép thanh toán lại khi FAILED)
+  idempotencyKey String        @unique
+  amount         Int           // Đã đổi từ Float sang Int
+  method         PaymentMethod
+  status         PaymentStatus @default(SUCCESS)
+
+  order          Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
