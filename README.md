@@ -1,23 +1,3 @@
-Hướng dẫn khởi tạo Database:   
-Cách 1: Chạy file SQL trực tiếp (qua Navicat / MySQL Workbench / CLI)
-
-Mở công cụ quản trị CSDL kết nối đến MySQL nội bộ.
-
-Mở và thực thi toàn bộ nội dung file database/init.sql.
-
-Cách 2: Đồng bộ tự động qua Prisma CLI (Khuyên dùng)
-
-Cấu hình biến môi trường trong backend/.env:
-
-DATABASE_URL="mysql://root:@localhost:3306/brewlite"
-Chạy lệnh đồng bộ schema và nạp dữ liệu mẫu (seed):
-
-Bash
-cd backend
-npx prisma db push
-npx prisma db seed
-
-
 ### Bước 1: Clone dự án
 ```bash
 git clone <URL_REPOSITORY_CỦA_NHÓM>
