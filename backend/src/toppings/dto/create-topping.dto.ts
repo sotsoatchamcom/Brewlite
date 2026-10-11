@@ -17,14 +17,20 @@ export class CreateToppingDto {
   @IsString({ message: 'Tên topping phải là chuỗi' })
   @IsNotEmpty({ message: 'Tên topping không được để trống' })
   // Thêm @Matches để bắt buộc phải có chữ cái
-  @Matches(/[a-zA-ZÀ-ỹ]/, {
-    message:
-      'Tên topping phải chứa ít nhất một chữ cái, không được chỉ nhập toàn số',
-  })
+  @Matches(
+    /^[a-zA-Z0-9\sàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]+$/,
+    {
+      message:
+        'Tên không được chứa ký tự đặc biệt (chỉ cho phép chữ cái, số và khoảng trắng)',
+    },
+  )
   @MaxLength(255, { message: 'Tên topping không được vượt quá 255 ký tự' })
   name: string;
 
   @ApiProperty({ example: 5000, description: 'Giá thêm (VNĐ)' })
+  @Transform(({ value }) =>
+    value !== undefined && value !== '' ? Number(value) : value,
+  )
   @IsInt({ message: 'Giá topping phải là số nguyên' })
   @Min(0, { message: 'Giá không được âm' })
   price: number;

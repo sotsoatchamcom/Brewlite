@@ -9,6 +9,7 @@ import {
   Request,
   Query,
   ParseIntPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -106,7 +107,17 @@ export class UsersController {
   @Roles(Role.ADMIN)
   @Patch(':id/status')
   @ApiOperation({ summary: 'Khóa / Mở khóa tài khoản (Chỉ Admin)' })
-  toggleStatus(@Param('id', ParseIntPipe) id: number) {
+  toggleStatus(@Request() req: any, @Param('id', ParseIntPipe) id: number) {
+    // Lấy ID của Admin đang thực hiện thao tác
+    const currentAdminId: any = req.user.userId;
+
+    // Nếu Admin cố tình truyền ID của chính mình thì chặn lại
+    if (currentAdminId === id) {
+      throw new BadRequestException(
+        'Bạn không thể khóa tài khoản của chính mình!',
+      );
+    }
+
     return this.usersService.toggleStatus(id);
   }
 }

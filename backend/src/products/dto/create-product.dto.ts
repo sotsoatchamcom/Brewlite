@@ -47,9 +47,13 @@ export class CreateProductDto {
   @IsString({ message: 'Tên sản phẩm phải là chuỗi' })
   @IsNotEmpty({ message: 'Tên sản phẩm không được để trống' })
   @MaxLength(100, { message: 'Tên sản phẩm tối đa 100 ký tự' })
-  @Matches(/[a-zA-ZÀ-ỹ]/, {
-    message: 'Tên sản phẩm phải chứa ít nhất một chữ cái',
-  })
+  @Matches(
+    /^[a-zA-Z0-9\sàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]+$/,
+    {
+      message:
+        'Tên không được chứa ký tự đặc biệt (chỉ cho phép chữ cái, số và khoảng trắng)',
+    },
+  )
   name: string;
 
   @ApiProperty({ example: 29000, description: 'Giá bán (VNĐ)' })

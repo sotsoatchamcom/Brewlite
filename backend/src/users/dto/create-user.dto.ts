@@ -57,8 +57,9 @@ export class CreateUserDto {
     description: 'Số điện thoại VN',
   })
   @IsOptional()
-  @Matches(/(84|0[3|5|7|8|9])+([0-9]{8})\b/, {
-    message: 'Số điện thoại không hợp lệ',
+  @Matches(/^(84|0[35789])[0-9]{8}$/, {
+    message:
+      'Số điện thoại không hợp lệ (Phải là số điện thoại Việt Nam 10 số, không chứa chữ cái, kí tự đặc biệt)',
   })
   phone?: string;
 

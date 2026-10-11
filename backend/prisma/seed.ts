@@ -164,7 +164,7 @@ async function main() {
     },
   });
 
-  // 3. Topping (ĐÃ BỔ SUNG IMAGE URL)
+  // 3. Topping
   await prisma.topping.createMany({
     data: [
       {
@@ -195,7 +195,7 @@ async function main() {
     ],
   });
 
-  // 4. Mã khuyến mãi (phục vụ Task 10), gồm cả mã dùng để test trường hợp không hợp lệ
+  // 4. Mã khuyến mãi
   const now = new Date();
   const yesterday = new Date(now.getTime() - DAY);
   const nextYear = new Date(now);
@@ -222,7 +222,6 @@ async function main() {
         expiresAt: nextYear,
       },
       {
-        // Mã đã hết hạn: test "mã không hợp lệ"
         code: 'EXPIRED10',
         type: DiscountType.PERCENT,
         value: 10,
@@ -231,7 +230,6 @@ async function main() {
         expiresAt: new Date(now.getTime() - 7 * DAY),
       },
       {
-        // Mã đã hết lượt dùng: test "mã không hợp lệ"
         code: 'HETLUOT',
         type: DiscountType.FIXED,
         value: 10000,
@@ -275,7 +273,7 @@ async function main() {
         stock: 100,
         categoryId: categoryCoffee.id,
         imageUrl: '/uploads/default-product.jpg',
-        description: `Sản phẩm ${item.name} được pha chế từ những nguyên liệu chọn lọc nhất, mang lại hương vị đậm đà khó quên.`,
+        description: `Sản phẩm ${item.name} được pha chế từ những nguyên liệu chọn lọc nhất.`,
         sizes: { create: standardSizes },
       },
     });
@@ -328,7 +326,7 @@ async function main() {
   }
   console.log('Đã tạo menu 18 món');
 
-  // 7. Đơn hàng mẫu (đủ trạng thái để xem màn "Đơn hàng" của admin)
+  // 7. Đơn hàng mẫu
   const products = await prisma.product.findMany({
     include: { sizes: { where: { isAvailable: true } } },
     orderBy: { id: 'asc' },
@@ -343,25 +341,23 @@ async function main() {
     where: { code: 'GIAM5K' },
   });
 
-  // Sắp xếp theo thời gian tạo để đơn cũ có id nhỏ hơn đơn mới
   const orderSpecs = STATUS_PLAN.map((status) => {
     const [minH, maxH] = AGE_HOURS[status];
     const hoursAgo = minH + rand() * (maxH - minH);
     return { status, createdAt: new Date(Date.now() - hoursAgo * HOUR) };
   }).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
-  const stockUsed = new Map<number, number>(); // productId -> số ly đã bán
-  const couponUsed = new Map<number, number>(); // couponId -> số lần dùng
-  const pointsEarned = new Map<number, number>(); // userId -> điểm tích lũy
+  const stockUsed = new Map<number, number>();
+  const couponUsed = new Map<number, number>();
+  const pointsEarned = new Map<number, number>();
 
   let index = 0;
   for (const spec of orderSpecs) {
     index++;
     const customer = pick(customers);
 
-    // --- Các món trong đơn ---
     const items: Prisma.OrderItemUncheckedCreateWithoutOrderInput[] = [];
-    let subtotal = 0;
+    let subtotal = 0; // TỔNG TIỀN GỐC
     const itemCount = randInt(1, 3);
 
     for (let i = 0; i < itemCount; i++) {
@@ -369,6 +365,7 @@ async function main() {
       const size = pick(product.sizes);
       const chosenToppings = shuffle(toppings).slice(0, randInt(0, 2));
       const qty = randInt(1, 2);
+
       const toppingTotal = chosenToppings.reduce((sum, t) => sum + t.price, 0);
       const lineTotal = (product.price + size.surcharge + toppingTotal) * qty;
       subtotal += lineTotal;
@@ -387,6 +384,8 @@ async function main() {
             toppingId: t.id,
             toppingName: t.name,
             price: t.price,
+            qty: 1, // <--- ĐÃ BỔ SUNG QTY
+            lineTotal: t.price * 1, // <--- ĐÃ BỔ SUNG LINETOTAL CHO TOPPING
           })),
         },
       });
@@ -396,7 +395,6 @@ async function main() {
       }
     }
 
-    // --- Mã giảm giá: khoảng 1/4 số đơn có áp mã ---
     let coupon: Coupon | undefined;
     let discount = 0;
     if (index % 4 === 0) {
@@ -406,20 +404,22 @@ async function main() {
         discount = calcDiscount(candidate, subtotal);
       }
     }
-    const total = Math.max(0, subtotal - discount);
 
-    // --- Điểm thưởng: 1 điểm / 10.000đ, chỉ cộng khi đơn đã thanh toán ---
+    // TỔNG TIỀN THỰC TRẢ (SAU KHI TRỪ KHUYẾN MÃI)
+    const finalAmount = Math.max(0, subtotal - discount);
+
     const isPaid = PAID_GROUP.includes(spec.status);
-    const points = isPaid ? Math.floor(total / 10000) : 0;
+    const points = isPaid ? Math.floor(finalAmount / 10000) : 0;
 
     const order = await prisma.order.create({
       data: {
         userId: customer.id,
         couponId: coupon?.id,
         status: spec.status,
-        total,
+        total: subtotal, // <--- GHI NHẬN TỔNG GỐC VÀO TOTAL
         discountCode: coupon?.code,
         discountAmount: discount,
+        finalAmount: finalAmount, // <--- ĐÃ BỔ SUNG FINAL AMOUNT
         loyaltyPointsEarned: points,
         createdAt: spec.createdAt,
         updatedAt: new Date(
@@ -444,14 +444,14 @@ async function main() {
     // --- Thanh toán ---
     const method = index % 2 === 0 ? PaymentMethod.WALLET : PaymentMethod.CARD;
     const payAt = new Date(spec.createdAt.getTime() + 60000);
+    const mockTransactionId = `MOCK-TX-${Date.now()}-${order.id}`;
 
-    // Một vài đơn thanh toán lỗi lần đầu rồi thử lại thành công (minh họa quan hệ 1-N)
     if (spec.status === OrderStatus.PAID && index % 9 === 0) {
       await prisma.payment.create({
         data: {
           orderId: order.id,
           idempotencyKey: `seed-${randomUUID()}`,
-          amount: total,
+          amount: finalAmount, // <--- SỬ DỤNG FINAL AMOUNT CHO THANH TOÁN
           method,
           status: PaymentStatus.FAILED,
           createdAt: spec.createdAt,
@@ -463,9 +463,10 @@ async function main() {
         data: {
           orderId: order.id,
           idempotencyKey: `seed-${randomUUID()}`,
-          amount: total,
+          amount: finalAmount, // <--- SỬ DỤNG FINAL AMOUNT CHO THANH TOÁN
           method,
           status: PaymentStatus.SUCCESS,
+          transactionId: mockTransactionId, // <--- ĐÃ BỔ SUNG TRANSACTION ID
           createdAt: payAt,
         },
       });
@@ -474,17 +475,15 @@ async function main() {
         data: {
           orderId: order.id,
           idempotencyKey: `seed-${randomUUID()}`,
-          amount: total,
+          amount: finalAmount, // <--- SỬ DỤNG FINAL AMOUNT CHO THANH TOÁN
           method,
           status: PaymentStatus.FAILED,
           createdAt: payAt,
         },
       });
     }
-    // PENDING và CANCELLED (huỷ trước khi thanh toán): chưa có thanh toán thành công
   }
 
-  // --- Đồng bộ lại tồn kho, lượt dùng mã và điểm thưởng theo các đơn đã tạo ---
   for (const [productId, qty] of stockUsed) {
     await prisma.product.update({
       where: { id: productId },

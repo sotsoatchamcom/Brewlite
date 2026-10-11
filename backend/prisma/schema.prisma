@@ -149,6 +149,7 @@ model Order {
   total               Int         // Đã đổi từ Float sang Int
   discountCode        String?
   discountAmount      Int         @default(0) // Đã đổi từ Float sang Int
+  finalAmount         Int
   loyaltyPointsEarned Int         @default(0) // Tránh cộng điểm 2 lần
 
   user        User               @relation(fields: [userId], references: [id])
@@ -189,6 +190,8 @@ model OrderItemTopping {
   // Bản chụp thông tin topping tại thời điểm đặt
   toppingName  String
   price        Int       // Đã đổi từ Float sang Int
+  qty          Int       @default(1)
+  lineTotal    Int
 
   orderItem    OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
   topping      Topping   @relation(fields: [toppingId], references: [id])
@@ -201,6 +204,7 @@ model Payment {
   amount         Int           // Đã đổi từ Float sang Int
   method         PaymentMethod
   status         PaymentStatus @default(SUCCESS)
+  transactionId  String?
 
   order          Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
 

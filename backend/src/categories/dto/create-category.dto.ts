@@ -13,10 +13,13 @@ export class CreateCategoryDto {
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString({ message: 'Tên danh mục phải là chuỗi ký tự' })
   @IsNotEmpty({ message: 'Tên danh mục không được để trống' })
-  @Matches(/[a-zA-ZÀ-ỹ]/, {
-    message:
-      'Tên danh mục phải chứa ít nhất một chữ cái, không được chỉ nhập toàn số',
-  })
+  @Matches(
+    /^[a-zA-Z0-9\sàáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]+$/,
+    {
+      message:
+        'Tên không được chứa ký tự đặc biệt (chỉ cho phép chữ cái, số và khoảng trắng)',
+    },
+  )
   name: string;
 
   @ApiProperty({ example: 'Các loại cà phê', required: false })

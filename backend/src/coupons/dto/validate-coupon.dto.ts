@@ -5,6 +5,7 @@ import {
   IsInt,
   Min,
   MaxLength,
+  MinLength,
   Matches,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
@@ -19,10 +20,13 @@ export class ValidateCouponDto {
   )
   @IsString({ message: 'Mã giảm giá phải là một chuỗi ký tự' })
   @IsNotEmpty({ message: 'Vui lòng nhập mã giảm giá' })
+  @MinLength(5, {
+    message: 'Mã giảm giá quá ngắn (tối thiểu 5 ký tự)',
+  })
   @MaxLength(20, { message: 'Mã giảm giá không được vượt quá 20 ký tự' })
-  @Matches(/^[A-Z0-9_-]+$/, {
+  @Matches(/^[A-Z0-9]+$/, {
     message:
-      'Mã giảm giá chỉ được chứa chữ cái in hoa, số, dấu gạch ngang hoặc gạch dưới',
+      'Mã giảm giá chỉ được chứa chữ cái in hoa và số (Không chứa dấu cách hay ký tự đặc biệt)',
   })
   code: string;
 

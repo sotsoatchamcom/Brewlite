@@ -184,9 +184,26 @@ export class UsersService {
       }
     }
 
+    // --- BẮT ĐẦU ĐOẠN SỬA LỖI BĂM MẬT KHẨU ---
+    const updateData: any = { ...updateUserDto };
+
+    // Nếu Admin điền mật khẩu mới ở giao diện Edit
+    if (updateData.password) {
+      // 1. Băm mật khẩu ra
+      const saltRounds = 10;
+      updateData.passwordHash = await bcrypt.hash(
+        updateData.password,
+        saltRounds,
+      );
+
+      // 2. Xóa cái trường password chữ thường đi để tránh Prisma báo lỗi
+      delete updateData.password;
+    }
+    // --- KẾT THÚC ĐOẠN SỬA LỖI ---
+
     return this.prisma.user.update({
       where: { id },
-      data: updateUserDto,
+      data: updateData, // Dùng updateData thay vì updateUserDto
       select: {
         id: true,
         email: true,
@@ -195,6 +212,7 @@ export class UsersService {
         gender: true,
         loyaltyPoints: true,
         role: true,
+        isActive: true, // Nhớ thêm isActive để trả về Frontend
       },
     });
   }
@@ -204,9 +222,9 @@ export class UsersService {
     if (!user)
       throw new NotFoundException(`Không tìm thấy người dùng với ID ${id}`);
 
-    if (user.role === Role.ADMIN) {
-      throw new ConflictException('Không thể khóa tài khoản Admin!');
-    }
+    //if (user.role === Role.ADMIN) {
+    //throw new ConflictException('Không thể khóa tài khoản Admin!');
+    //}
 
     const updatedUser = await this.prisma.user.update({
       where: { id },

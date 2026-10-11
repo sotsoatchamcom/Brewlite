@@ -1,4 +1,6 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
@@ -6,11 +8,29 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    stopAtFirstError: true,
-  }),
+  // Thêm <NestExpressApplication> để phục vụ file tĩnh (hình ảnh upload)
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Mở quyền truy cập thư mục uploads qua đường dẫn /uploads/...
+  app.useStaticAssets(join(process.cwd(), 'uploads'), {
+    prefix: '/uploads/',
+  });
+
+  app.enableCors({
+    origin: ['http://localhost:3000', process.env.FRONTEND_URL].filter(
+      Boolean,
+    ) as string[],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true,
+  });
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      stopAtFirstError: true,
+      transform: true, // Tự động ép kiểu từ FormData/Query sang kiểu trong DTO
+      transformOptions: { enableImplicitConversion: true },
+    }),
   );
 
   const config = new DocumentBuilder()
@@ -26,8 +46,8 @@ async function bootstrap() {
   app.useGlobalInterceptors(new TransformInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  await app.listen(3000);
-  console.log(`[NestJS] Server running on: http://localhost:3000`);
-  console.log(`[Swagger] API Docs: http://localhost:3000/api-docs`);
+  const port = process.env.PORT || 3001;
+  await app.listen(port);
+  console.log(`[NestJS] Server running on: http://localhost:${port}`);
 }
 bootstrap();
