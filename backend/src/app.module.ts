@@ -6,6 +6,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { ProductsModule } from './products/products.module';
 import { ToppingsModule } from './toppings/toppings.module';
 import { OrdersModule } from './orders/orders.module';
+import { PaymentsModule } from './payments/payments.module';
 import { CouponsModule } from './coupons/coupons.module';
 
 @Module({
@@ -17,6 +18,7 @@ import { CouponsModule } from './coupons/coupons.module';
     ProductsModule,
     ToppingsModule,
     OrdersModule,
+    PaymentsModule,
     CouponsModule,
     // ConfigModule.forRoot({ isGlobal: true }),
   ],
