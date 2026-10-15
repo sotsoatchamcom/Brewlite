@@ -1,14 +1,20 @@
 import { PartialType, ApiPropertyOptional } from '@nestjs/swagger';
 import { CreateUserDto } from './create-user.dto';
-import { IsOptional, IsBoolean } from 'class-validator';
+import { IsOptional, IsBoolean, IsString } from 'class-validator';
 
-// Phải dùng PartialType toàn bộ để Admin có thể ép đổi password, không dùng OmitType
 export class UpdateUserDto extends PartialType(CreateUserDto) {
-  @ApiPropertyOptional({
-    example: true,
-    description: 'Trạng thái hoạt động (true = mở, false = khóa)',
-  })
+  @ApiPropertyOptional({ example: '0987654321', description: 'Số điện thoại' })
   @IsOptional()
-  @IsBoolean({ message: 'Trạng thái hoạt động phải là kiểu boolean' })
+  @IsString()
+  phone?: string;
+
+  @ApiPropertyOptional({ example: 'newpass123', description: 'Mật khẩu mới' })
+  @IsOptional()
+  @IsString()
+  password?: string;
+
+  @ApiPropertyOptional({ example: true, description: 'Trạng thái hoạt động' })
+  @IsOptional()
+  @IsBoolean()
   isActive?: boolean;
 }
