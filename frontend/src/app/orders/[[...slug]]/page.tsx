@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from 'react';
-import { Search, ShoppingBag, ChevronDown } from 'lucide-react';
-import { MOCK_ORDERS, MOCK_USERS } from '@/lib/mockData';
+import { useState, useEffect } from 'react';
+import { Search, ShoppingBag, ChevronDown, RotateCw } from 'lucide-react';
 import type { Order, OrderStatus } from '@/lib/types';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -30,14 +29,15 @@ const statusStyle = (status: OrderStatus) => {
     return STATUS_CONFIG[group];
 };
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
 export default function OrdersPage() {
-    const [orders, setOrders] = useState<Order[]>(MOCK_ORDERS as Order[]);
-    const users = MOCK_USERS;
+    const [orders, setOrders] = useState<Order[]>([]);
+    const [loading, setLoading] = useState(true);
 
     const pathname = usePathname();
     const router = useRouter();
 
-    // Đồng bộ trực tiếp với URL để Sidebar bên trái và các nút lọc bên phải luôn khớp nhau
     const statusFilter = pathToFilter(pathname || '/orders/all');
     const setStatusFilter = (f: OrderFilter) => {
         router.push(filterToPath(f));
@@ -47,23 +47,75 @@ export default function OrdersPage() {
     const [detailOrder, setDetailOrder] = useState<Order | null>(null);
     const [openDropdown, setOpenDropdown] = useState<number | string | null>(null);
 
+    // 1. Gọi API lấy danh sách đơn hàng thực tế (đã bổ sung limit=100)
+    const fetchOrders = async () => {
+        try {
+            setLoading(true);
+            const res = await fetch(`${BACKEND_URL}/orders?page=1&limit=100`);
+            if (!res.ok) throw new Error('Không thể tải danh sách đơn hàng');
+            const result = await res.json();
+
+            const rawOrders = Array.isArray(result) ? result : (result.data || []);
+
+            // Chuẩn hóa dữ liệu từ Prisma sang định dạng hiển thị của giao diện
+            const normalizedOrders = rawOrders.map((o: any) => ({
+                ...o,
+                items: o.orderItems || o.items || [],
+                customerName: o.user?.name || (o.userId ? `Khách #${o.userId}` : 'Khách vãng lai'),
+                customerEmail: o.user?.email || '',
+                total: o.finalAmount ?? o.total ?? 0,
+                subtotal: o.total ?? 0,
+                discount: o.discountAmount ?? 0,
+                couponCode: o.discountCode ?? '',
+            }));
+
+            setOrders(normalizedOrders);
+        } catch (error) {
+            console.error('Fetch error:', error);
+            toast.error('Không thể kết nối tới máy chủ NestJS (Port 3001)');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchOrders();
+    }, []);
+
+    // Helper trích xuất thông tin an toàn
     const getOrderNumber = (o: any) => o.orderNumber ?? `#${o.id}`;
-    const getCustomerName = (o: any) => {
-        if (o.customerName) return o.customerName;
-        const foundUser = users.find((u) => u.id === o.userId);
-        return (foundUser as any)?.name ?? (foundUser as any)?.fullName ?? `User ${o.userId ?? ''}`;
+    const getCustomerName = (o: any) => o.customerName || (o.userId ? `Khách #${o.userId}` : 'Khách vãng lai');
+    const getCustomerEmail = (o: any) => o.customerEmail || '';
+    const getItemName = (i: any) => i.productName ?? i.product?.name ?? `Sản phẩm #${i.productId ?? ''}`;
+    const getItemQty = (i: any) => i.qty ?? i.quantity ?? 1;
+
+    // Trích xuất Tên Size an toàn (tránh lỗi object React child)
+    const getItemSize = (i: any): string => {
+        if (i.sizeName && typeof i.sizeName === 'string') return i.sizeName;
+        if (typeof i.size === 'string') return i.size;
+        if (i.size && typeof i.size === 'object' && i.size.name) return String(i.size.name);
+        return 'M';
     };
-    const getCustomerEmail = (o: any) => {
-        if (o.customerEmail) return o.customerEmail;
-        const foundUser = users.find((u) => u.id === o.userId);
-        return foundUser?.email ?? '';
+
+    // Tính đơn giá của 1 ly hoàn chỉnh (đã gồm phụ thu size + topping)
+    const getItemPrice = (i: any) => {
+        if (i.lineTotal && (i.qty || i.quantity)) {
+            return Math.round(i.lineTotal / (i.qty || i.quantity));
+        }
+        return i.unitPrice ?? i.price ?? i.product?.price ?? 0;
     };
-    const getItemQty = (i: any) => i.quantity ?? i.qty ?? 1;
-    const getItemSize = (i: any) => i.size ?? i.sizeName ?? 'M';
-    const getItemPrice = (i: any) => i.unitPrice ?? i.price ?? 0;
+
+    // Trích xuất Topping an toàn từ OrderItemTopping[]
     const getItemToppings = (i: any): string[] => {
         if (Array.isArray(i.toppingNames)) return i.toppingNames;
-        if (Array.isArray(i.toppings)) return i.toppings.map((t: any) => (typeof t === 'string' ? t : t.name));
+        if (Array.isArray(i.toppings)) {
+            return i.toppings
+                .map((t: any) => {
+                    if (typeof t === 'string') return t;
+                    return t.toppingName || t.name || t.topping?.name || '';
+                })
+                .filter(Boolean);
+        }
         return [];
     };
 
@@ -83,13 +135,32 @@ export default function OrdersPage() {
         })
         .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 
-    function changeStatus(orderId: number | string, status: OrderStatus) {
-        setOrders((prev) =>
-            prev.map((o) => (o.id === orderId ? { ...o, status } : o))
-        );
-        setOpenDropdown(null);
-        const o = orders.find((x) => x.id === orderId);
-        toast.success(`Order ${o ? getOrderNumber(o) : orderId} → ${status}`);
+    // 2. Chuyển trạng thái đơn hàng (Gọi PATCH /orders/:id/status vào backend State Machine)
+    async function changeStatus(orderId: number | string, newStatus: OrderStatus) {
+        try {
+            const res = await fetch(`${BACKEND_URL}/orders/${orderId}/status`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                toast.error(data.message || `Chuyển trạng thái thất bại`);
+                return;
+            }
+
+            // Cập nhật lại UI ngay lập tức
+            setOrders((prev) =>
+                prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
+            );
+            toast.success(`Đơn #${orderId} ➔ ${newStatus}`);
+        } catch (error) {
+            toast.error('Lỗi kết nối tới máy chủ backend');
+        } finally {
+            setOpenDropdown(null);
+        }
     }
 
     function formatTime(iso: string) {
@@ -101,9 +172,20 @@ export default function OrdersPage() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h1 className="text-2xl font-bold text-foreground">Orders</h1>
-                <p className="text-sm text-muted-foreground mt-0.5">Manage and track all customer orders</p>
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-2xl font-bold text-foreground">Orders</h1>
+                    <p className="text-sm text-muted-foreground mt-0.5">Manage and track all customer orders</p>
+                </div>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchOrders}
+                    className="flex items-center gap-2 rounded-xl text-xs font-medium"
+                >
+                    <RotateCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                    Làm mới
+                </Button>
             </div>
 
             {/* Status stat cards */}
@@ -153,8 +235,8 @@ export default function OrdersPage() {
                                         statusFilter === s ? `${cfg.bg}${cfg.color}` : 'bg-muted text-muted-foreground'
                                     }`}
                                 >
-                  {counts[s]}
-                </span>
+                                    {counts[s]}
+                                </span>
                             </button>
                         );
                     })}
@@ -185,85 +267,95 @@ export default function OrdersPage() {
                     </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                    {filtered.length === 0 && (
+                    {loading ? (
                         <tr>
                             <td colSpan={7} className="text-center py-12 text-muted-foreground">
-                                <ShoppingBag className="w-8 h-8 mx-auto mb-2 opacity-30" />No orders found
+                                Đang tải danh sách đơn hàng...
                             </td>
                         </tr>
-                    )}
-                    {filtered.map((order) => {
-                        const cfg = statusStyle(order.status);
-                        return (
-                            <tr key={order.id} className="hover:bg-accent/30 transition-colors">
-                                <td className="px-5 py-3.5 font-mono text-xs font-semibold">
-                                    {getOrderNumber(order)}
-                                </td>
-                                <td className="px-5 py-3.5">
-                                    <div className="font-medium text-sm">{getCustomerName(order)}</div>
-                                    <div className="text-xs text-muted-foreground">{getCustomerEmail(order)}</div>
-                                </td>
-                                <td className="px-5 py-3.5">
-                                    <div className="text-xs text-muted-foreground max-w-[220px] line-clamp-2">
-                                        {order.items
-                                            ?.map((i: any) => `${i.productName} (${getItemSize(i)[0]}) ×${getItemQty(i)}`)
-                                            .join(', ')}
-                                    </div>
-                                </td>
-                                <td className="px-5 py-3.5 text-right font-semibold">
-                                    {Number(order.total ?? 0).toLocaleString('vi-VN')}đ
-                                </td>
-                                <td className="px-5 py-3.5 text-center">
-                                    <div className="relative inline-block">
-                                        <button
-                                            onClick={() => setOpenDropdown(openDropdown === order.id ? null : order.id)}
-                                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${cfg.bg} ${cfg.color} ${cfg.border} hover:opacity-80`}
+                    ) : filtered.length === 0 ? (
+                        <tr>
+                            <td colSpan={7} className="text-center py-12 text-muted-foreground">
+                                <ShoppingBag className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                                No orders found
+                            </td>
+                        </tr>
+                    ) : (
+                        filtered.map((order) => {
+                            const cfg = statusStyle(order.status);
+                            return (
+                                <tr key={order.id} className="hover:bg-accent/30 transition-colors">
+                                    <td className="px-5 py-3.5 font-mono text-xs font-semibold">
+                                        {getOrderNumber(order)}
+                                    </td>
+                                    <td className="px-5 py-3.5">
+                                        <div className="font-medium text-sm">{getCustomerName(order)}</div>
+                                        <div className="text-xs text-muted-foreground">{getCustomerEmail(order)}</div>
+                                    </td>
+                                    <td className="px-5 py-3.5">
+                                        <div className="text-xs text-muted-foreground max-w-[220px] line-clamp-2">
+                                            {order.items?.length > 0
+                                                ? order.items
+                                                    .map((i: any) => `${getItemName(i)} (${getItemSize(i)}) ×${getItemQty(i)}`)
+                                                    .join(', ')
+                                                : '—'}
+                                        </div>
+                                    </td>
+                                    <td className="px-5 py-3.5 text-right font-semibold">
+                                        {Number(order.total ?? 0).toLocaleString('vi-VN')}đ
+                                    </td>
+                                    <td className="px-5 py-3.5 text-center">
+                                        <div className="relative inline-block">
+                                            <button
+                                                onClick={() => setOpenDropdown(openDropdown === order.id ? null : order.id)}
+                                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${cfg.bg} ${cfg.color} ${cfg.border} hover:opacity-80`}
+                                            >
+                                                <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                                                {order.status}
+                                                <ChevronDown className="w-3 h-3 opacity-60" />
+                                            </button>
+                                            {openDropdown === order.id && (
+                                                <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden min-w-[170px]">
+                                                    {ORDER_STATUSES.map((s) => {
+                                                        const c = statusStyle(s);
+                                                        return (
+                                                            <button
+                                                                key={s}
+                                                                onClick={() => changeStatus(order.id, s)}
+                                                                disabled={order.status === s}
+                                                                className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-left transition-colors ${
+                                                                    order.status === s
+                                                                        ? `${c.bg}${c.color} cursor-default`
+                                                                        : 'hover:bg-accent text-muted-foreground hover:text-foreground'
+                                                                }`}
+                                                            >
+                                                                <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+                                                                {s}
+                                                                {order.status === s && <span className="ml-auto text-[10px]">current</span>}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td className="px-5 py-3.5 text-xs text-muted-foreground whitespace-nowrap">
+                                        {formatTime(order.createdAt)}
+                                    </td>
+                                    <td className="px-5 py-3.5 text-right">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-7 text-xs rounded-lg px-2.5"
+                                            onClick={() => setDetailOrder(order)}
                                         >
-                                            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-                                            {order.status}
-                                            <ChevronDown className="w-3 h-3 opacity-60" />
-                                        </button>
-                                        {openDropdown === order.id && (
-                                            <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden min-w-[170px]">
-                                                {ORDER_STATUSES.map((s) => {
-                                                    const c = statusStyle(s);
-                                                    return (
-                                                        <button
-                                                            key={s}
-                                                            onClick={() => changeStatus(order.id, s)}
-                                                            disabled={order.status === s}
-                                                            className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-left transition-colors ${
-                                                                order.status === s
-                                                                    ? `${c.bg}${c.color} cursor-default`
-                                                                    : 'hover:bg-accent text-muted-foreground hover:text-foreground'
-                                                            }`}
-                                                        >
-                                                            <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
-                                                            {s}
-                                                            {order.status === s && <span className="ml-auto text-[10px]">current</span>}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                </td>
-                                <td className="px-5 py-3.5 text-xs text-muted-foreground whitespace-nowrap">
-                                    {formatTime(order.createdAt)}
-                                </td>
-                                <td className="px-5 py-3.5 text-right">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 text-xs rounded-lg px-2.5"
-                                        onClick={() => setDetailOrder(order)}
-                                    >
-                                        View
-                                    </Button>
-                                </td>
-                            </tr>
-                        );
-                    })}
+                                            View
+                                        </Button>
+                                    </td>
+                                </tr>
+                            );
+                        })
+                    )}
                     </tbody>
                 </table>
             </div>
@@ -280,8 +372,8 @@ export default function OrdersPage() {
                                         statusStyle(detailOrder.status).bg
                                     } ${statusStyle(detailOrder.status).color} ${statusStyle(detailOrder.status).border}`}
                                 >
-                  {detailOrder.status}
-                </span>
+                                    {detailOrder.status}
+                                </span>
                             )}
                         </DialogTitle>
                     </DialogHeader>
@@ -302,7 +394,7 @@ export default function OrdersPage() {
                                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
                                     Items
                                 </p>
-                                <div className="space-y-2">
+                                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                                     {detailOrder.items?.map((item: any, i: number) => {
                                         const qty = getItemQty(item);
                                         const price = getItemPrice(item);
@@ -311,7 +403,7 @@ export default function OrdersPage() {
                                             <div key={i} className="flex items-start justify-between gap-2 p-2.5 bg-accent/40 rounded-xl">
                                                 <div>
                                                     <p className="font-medium">
-                                                        {item.productName}{' '}
+                                                        {getItemName(item)}{' '}
                                                         <span className="text-muted-foreground font-normal">({getItemSize(item)})</span>
                                                     </p>
                                                     {tNames.length > 0 && (
@@ -320,8 +412,8 @@ export default function OrdersPage() {
                                                 </div>
                                                 <div className="text-right shrink-0">
                                                     <p className="text-xs text-muted-foreground">×{qty}</p>
-                                                    <p className="font-semibold">
-                                                        {(price * qty).toLocaleString('vi-VN')}đ
+                                                    <p className="font-semibold text-foreground">
+                                                        {price.toLocaleString('vi-VN')}đ
                                                     </p>
                                                 </div>
                                             </div>
@@ -333,14 +425,14 @@ export default function OrdersPage() {
                                 <div className="flex justify-between text-sm">
                                     <span className="text-muted-foreground">Subtotal</span>
                                     <span>
-                    {Number((detailOrder as any).subtotal ?? detailOrder.total ?? 0).toLocaleString('vi-VN')}đ
-                  </span>
+                                        {Number((detailOrder as any).subtotal ?? detailOrder.total ?? 0).toLocaleString('vi-VN')}đ
+                                    </span>
                                 </div>
                                 {((detailOrder as any).discount ?? 0) > 0 && (
                                     <div className="flex justify-between text-sm text-emerald-600">
-                    <span>
-                      Discount {(detailOrder as any).couponCode && `(${(detailOrder as any).couponCode})`}
-                    </span>
+                                        <span>
+                                            Discount {(detailOrder as any).couponCode && `(${(detailOrder as any).couponCode})`}
+                                        </span>
                                         <span>-{Number((detailOrder as any).discount).toLocaleString('vi-VN')}đ</span>
                                     </div>
                                 )}
@@ -349,11 +441,6 @@ export default function OrdersPage() {
                                     <span>{Number(detailOrder.total ?? 0).toLocaleString('vi-VN')}đ</span>
                                 </div>
                             </div>
-                            {(detailOrder as any).note && (
-                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
-                                    <strong>Note:</strong> {(detailOrder as any).note}
-                                </div>
-                            )}
                         </div>
                     )}
                 </DialogContent>

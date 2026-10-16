@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,11 +20,7 @@ import {
   User as UserIcon,
   ChevronUp,
   ChevronDown,
-  Clock,
-  AlertTriangle,
-  CheckCheck,
 } from "lucide-react";
-import { MOCK_ORDERS, MOCK_PRODUCTS, MOCK_USERS } from "@/lib/mockData";
 import {
   FILTERS,
   countByFilter,
@@ -64,6 +60,8 @@ const ORDER_SUBMENU_CONFIG: Record<
   },
 };
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
 export default function DashboardLayout({
                                           children,
                                         }: {
@@ -72,20 +70,66 @@ export default function DashboardLayout({
   const pathname = usePathname() || "/";
   const router = useRouter();
 
-  // Lấy dữ liệu đăng nhập từ AuthContext
   const { isAuthenticated, isLoading, user, logout } = useAuth();
   const [mounted, setMounted] = useState(false);
 
   const [ordersOpen, setOrdersOpen] = useState(true);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [readIds, setReadIds] = useState<string[]>([]);
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
 
-  // 1. Tránh lỗi Hydration
+  // Lưu trữ danh sách đơn hàng thực tế từ Backend
+  const [realOrders, setRealOrders] = useState<any[]>([]);
+
+  // 1. Gọi API lấy đủ 100 đơn hàng gần nhất để đếm chính xác số lượng
+  const fetchSidebarOrders = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/orders?page=1&limit=100`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : data.data || [];
+      setRealOrders(list);
+    } catch (err) {
+      console.error("Lỗi lấy dữ liệu orders cho Sidebar:", err);
+    }
+  }, []);
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // 2. Logic kiểm tra quyền truy cập (Route Guard)
+  // Gọi API khi đăng nhập, khi đổi trang và tự động làm mới mỗi 15 giây
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchSidebarOrders();
+      const interval = setInterval(fetchSidebarOrders, 15000);
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated, pathname, fetchSidebarOrders]);
+
+  // Số thông báo chưa đọc (làm mới mỗi 10 giây và khi đổi trang)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const fetchUnread = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/notifications/unread-count`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const payload =
+          data && data.count === undefined && data.data && typeof data.data === "object" ? data.data : data;
+        setUnreadNotifs(Number(payload?.count) || 0);
+      } catch {
+        /* bỏ qua lỗi mạng */
+      }
+    };
+    fetchUnread();
+    const timer = setInterval(fetchUnread, 10000);
+    return () => clearInterval(timer);
+  }, [isAuthenticated, pathname]);
+
+  // Route Guard
   useEffect(() => {
     if (mounted && !isLoading) {
       if (!isAuthenticated && pathname !== "/login") {
@@ -96,7 +140,6 @@ export default function DashboardLayout({
     }
   }, [mounted, isLoading, isAuthenticated, pathname, router]);
 
-  // 3. Màn hình chờ trong lúc kiểm tra token
   if (!mounted || isLoading) {
     return (
         <div className="min-h-screen flex items-center justify-center bg-background">
@@ -105,73 +148,22 @@ export default function DashboardLayout({
     );
   }
 
-  // 4. Nếu ở trang Login thì hiển thị Form Login
   if (pathname === "/login") {
     return <>{children}</>;
   }
 
-  // 5. Nếu chưa đăng nhập thì chặn không render giao diện Dashboard
   if (!isAuthenticated) {
     return null;
   }
 
-  // Đếm số lượng đơn hàng cho từng mục trong All Orders
+  // TÍNH TOÁN SỐ LƯỢNG ĐƠN HÀNG THẬT TỪ DATABASE
   const orderCounts = Object.fromEntries(
-      FILTERS.map((f) => [f, countByFilter(MOCK_ORDERS as any, f)])
+      FILTERS.map((f) => [f, countByFilter(realOrders as any, f)])
   ) as Record<OrderFilter, number>;
 
   const isOrdersPage = pathname.startsWith("/orders");
   const activeOrderFilter = isOrdersPage ? pathToFilter(pathname) : null;
 
-  // Xử lý thông báo (Notifications)
-  const getCustomerName = (userId: any) => {
-    const u = MOCK_USERS.find((x) => x.id === userId);
-    return (u as any)?.name ?? (u as any)?.fullName ?? `User #${userId}`;
-  };
-
-  const pendingOrderNotifs = (MOCK_ORDERS as any[])
-      .filter(
-          (o) =>
-              String(o.status).toUpperCase() === "PENDING" ||
-              String(o.status).toUpperCase() === "RECEIVED" ||
-              String(o.status).toUpperCase() === "PROCESSING"
-      )
-      .map((o) => ({
-        id: `order-${o.id}`,
-        type: "order" as const,
-        title: `Order #${o.id} needs attention`,
-        desc: `${getCustomerName(o.userId)} · ${Number(o.total ?? 0).toLocaleString("vi-VN")}đ`,
-        time: String(o.createdAt ?? "").replace("T", " ").substring(0, 16),
-        href: "/orders/received",
-      }));
-
-  const lowStockNotifs = (MOCK_PRODUCTS as any[])
-      .filter((p) => (p.stock ?? 0) <= 10)
-      .map((p) => ({
-        id: `stock-${p.id}`,
-        type: "stock" as const,
-        title: p.stock === 0 ? `Out of stock: ${p.name}` : `Low stock: ${p.name}`,
-        desc: `Only ${p.stock} items remaining in inventory`,
-        time: "Inventory alert",
-        href: "/products",
-      }));
-
-  const notifications = [...pendingOrderNotifs, ...lowStockNotifs];
-  const unreadCount = notifications.filter((n) => !readIds.includes(n.id)).length;
-
-  function markAllAsRead() {
-    setReadIds(notifications.map((n) => n.id));
-  }
-
-  function handleNotifClick(id: string, href: string) {
-    if (!readIds.includes(id)) {
-      setReadIds((prev) => [...prev, id]);
-    }
-    setNotifOpen(false);
-    router.push(href);
-  }
-
-  // Xử lý nút Đăng xuất
   const handleLogout = (e: React.MouseEvent) => {
     e.preventDefault();
     logout();
@@ -211,116 +203,19 @@ export default function DashboardLayout({
             </div>
           </div>
 
-          {/* Khu vực Thông báo (Dropdown) & Tài khoản Admin */}
           <div className="flex items-center gap-4">
-            <div className="relative">
-              <button
-                  onClick={() => setNotifOpen((prev) => !prev)}
-                  className="relative p-2 rounded-xl hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
-                  title="Notifications"
-              >
-                <Bell className="w-5 h-5" />
-                {unreadCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
-                  {unreadCount}
-                </span>
-                )}
-              </button>
-
-              {/* Bảng xổ xuống khi bấm vào chuông thông báo */}
-              {notifOpen && (
-                  <>
-                    <div
-                        className="fixed inset-0 z-40"
-                        onClick={() => setNotifOpen(false)}
-                    />
-                    <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-card border border-border rounded-2xl shadow-xl z-50 overflow-hidden">
-                      <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-accent/30">
-                        <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm text-foreground">
-                        Notifications
-                      </span>
-                          {unreadCount > 0 && (
-                              <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-red-50 text-red-600 border border-red-200">
-                          {unreadCount} new
-                        </span>
-                          )}
-                        </div>
-                        {unreadCount > 0 && (
-                            <button
-                                onClick={markAllAsRead}
-                                className="flex items-center gap-1 text-xs text-primary hover:underline font-medium"
-                            >
-                              <CheckCheck className="w-3.5 h-3.5" />
-                              Mark all read
-                            </button>
-                        )}
-                      </div>
-
-                      <div className="max-h-80 overflow-y-auto divide-y divide-border">
-                        {notifications.length === 0 ? (
-                            <div className="py-10 text-center text-muted-foreground text-xs">
-                              No notifications right now
-                            </div>
-                        ) : (
-                            notifications.map((n) => {
-                              const isUnread = !readIds.includes(n.id);
-                              return (
-                                  <button
-                                      key={n.id}
-                                      onClick={() => handleNotifClick(n.id, n.href)}
-                                      className={`w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-accent/50 transition-colors ${
-                                          isUnread ? "bg-primary/[0.03]" : "opacity-70"
-                                      }`}
-                                  >
-                                    <div
-                                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-                                            n.type === "order"
-                                                ? "bg-blue-50 text-blue-600"
-                                                : "bg-amber-50 text-amber-600"
-                                        }`}
-                                    >
-                                      {n.type === "order" ? (
-                                          <Clock className="w-4 h-4" />
-                                      ) : (
-                                          <AlertTriangle className="w-4 h-4" />
-                                      )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <p className="text-xs font-semibold text-foreground truncate">
-                                          {n.title}
-                                        </p>
-                                        {isUnread && (
-                                            <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
-                                        )}
-                                      </div>
-                                      <p className="text-xs text-muted-foreground truncate mt-0.5">
-                                        {n.desc}
-                                      </p>
-                                      <p className="text-[10px] text-muted-foreground/70 mt-1">
-                                        {n.time}
-                                      </p>
-                                    </div>
-                                  </button>
-                              );
-                            })
-                        )}
-                      </div>
-
-                      <div className="p-2.5 border-t border-border bg-accent/20 text-center">
-                        <Link
-                            href="/orders/all"
-                            onClick={() => setNotifOpen(false)}
-                            className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          View all orders →
-                        </Link>
-                      </div>
-                    </div>
-                  </>
+            <Link
+                href="/notifications"
+                className="relative p-2 rounded-xl hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+                title="Notifications"
+            >
+              <Bell className="w-5 h-5" />
+              {unreadNotifs > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                {unreadNotifs > 99 ? "99+" : unreadNotifs}
+              </span>
               )}
-            </div>
+            </Link>
 
             <div className="flex items-center gap-2.5 pl-3 border-l border-border">
               <div className="w-8 h-8 rounded-full bg-foreground text-background flex items-center justify-center shrink-0">
@@ -373,7 +268,6 @@ export default function DashboardLayout({
                   ORDERS
                 </p>
 
-                {/* Nút bấm đóng/mở All Orders */}
                 <button
                     type="button"
                     onClick={() => setOrdersOpen((prev) => !prev)}
@@ -394,13 +288,12 @@ export default function DashboardLayout({
                   )}
                 </button>
 
-                {/* 5 mục con của All Orders */}
                 {ordersOpen && (
                     <div className="ml-4 pl-3 border-l border-border space-y-1 pt-0.5">
                       {FILTERS.map((f) => {
                         const cfg = ORDER_SUBMENU_CONFIG[f];
                         const isSubActive = activeOrderFilter === f;
-                        const count = orderCounts[f];
+                        const count = orderCounts[f] ?? 0;
 
                         return (
                             <Link
@@ -413,9 +306,9 @@ export default function DashboardLayout({
                                 }`}
                             >
                               <div className="flex items-center gap-2.5">
-                          <span
-                              className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`}
-                          />
+                                <span
+                                    className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`}
+                                />
                                 <span>{cfg.label}</span>
                               </div>
                               <span
@@ -425,8 +318,8 @@ export default function DashboardLayout({
                                           : cfg.badge
                                   }`}
                               >
-                          {count}
-                        </span>
+                                {count}
+                              </span>
                             </Link>
                         );
                       })}
@@ -435,7 +328,6 @@ export default function DashboardLayout({
               </div>
             </div>
 
-            {/* Chân Sidebar: Reports & Sign Out */}
             <div className="p-3.5 border-t border-border space-y-1">
               <Link
                   href="/reports"
@@ -458,7 +350,6 @@ export default function DashboardLayout({
             </div>
           </aside>
 
-          {/* Nội dung chính của từng trang */}
           <main className="flex-1 p-6 lg:p-8 overflow-x-hidden">{children}</main>
         </div>
       </div>
