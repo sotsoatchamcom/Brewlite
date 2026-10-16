@@ -8,6 +8,8 @@ import { ToppingsModule } from './toppings/toppings.module';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
 import { CouponsModule } from './coupons/coupons.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { CouponsModule } from './coupons/coupons.module';
     OrdersModule,
     PaymentsModule,
     CouponsModule,
+    NotificationsModule,
+    ReportsModule,
     // ConfigModule.forRoot({ isGlobal: true }),
   ],
   controllers: [],
