@@ -78,6 +78,14 @@ function calcDiscount(coupon: Coupon, subtotal: number): number {
   return Math.min(capped, subtotal);
 }
 
+// Interface định nghĩa sản phẩm với ảnh và mô tả riêng
+interface SeedProductItem {
+  name: string;
+  price: number;
+  imageUrl: string;
+  description?: string;
+}
+
 async function main() {
   const saltRounds = 10;
 
@@ -149,21 +157,21 @@ async function main() {
     data: {
       name: 'Cà Phê',
       description: 'Cà phê',
-      imageUrl: '/uploads/default-cat-coffee.jpg',
+      imageUrl: '/uploads/categories/cat-coffee.jpg',
     },
   });
   const categoryMilkTea = await prisma.category.create({
     data: {
       name: 'Trà Sữa Pha Máy',
       description: 'Trà sữa',
-      imageUrl: '/uploads/default-cat-milktea.jpg',
+      imageUrl: '/uploads/categories/cat-milktea.jpg',
     },
   });
   const categoryFruitTea = await prisma.category.create({
     data: {
       name: 'Trà Trái Cây',
       description: 'Trà trái cây',
-      imageUrl: '/uploads/default-cat-fruittea.jpg',
+      imageUrl: '/uploads/categories/cat-fruittea.jpg',
     },
   });
 
@@ -173,27 +181,27 @@ async function main() {
       {
         name: 'Trân châu trắng',
         price: 10000,
-        imageUrl: '/uploads/default-topping.jpg',
+        imageUrl: '/uploads/toppings/topping-tranchautrang.jpg',
       },
       {
         name: 'Kem Macchiato',
         price: 15000,
-        imageUrl: '/uploads/default-topping.jpg',
+        imageUrl: '/uploads/toppings/topping-macchiato.jpg',
       },
       {
         name: 'Thạch đào',
         price: 10000,
-        imageUrl: '/uploads/default-topping.jpg',
+        imageUrl: '/uploads/toppings/topping-thachdao.jpg',
       },
       {
         name: 'Trân châu đen',
         price: 5000,
-        imageUrl: '/uploads/default-topping.jpg',
+        imageUrl: '/uploads/toppings/topping-tranchauden.jpg',
       },
       {
         name: 'Thạch trái cây',
         price: 10000,
-        imageUrl: '/uploads/default-topping.jpg',
+        imageUrl: '/uploads/toppings/topping-thachtraicay.jpg',
       },
     ],
   });
@@ -258,14 +266,49 @@ async function main() {
     { name: 'L', surcharge: 10000 },
   ];
 
-  // 6. Menu 18 món
-  const coffeeProducts = [
-    { name: 'Coffee Đen', price: 15000 },
-    { name: 'Coffee Sữa', price: 20000 },
-    { name: 'Bạc Xỉu', price: 25000 },
-    { name: 'Cacao', price: 25000 },
-    { name: 'Coffee Hạnh Nhân', price: 25000 },
-    { name: 'Coffee Kem Muối', price: 25000 },
+  // 6. Menu 18 món - Cấu hình đường dẫn ảnh riêng cho từng món
+  const coffeeProducts: SeedProductItem[] = [
+    {
+      name: 'Coffee Đen',
+      price: 15000,
+      imageUrl: '/uploads/products/coffee-den.jpg',
+      description:
+        'Cà phê đen truyền thống đậm đà, thơm nồng đánh thức mọi giác quan.',
+    },
+    {
+      name: 'Coffee Sữa',
+      price: 20000,
+      imageUrl: '/uploads/products/coffee-sua.jpg',
+      description:
+        'Sự kết hợp hoàn hảo giữa cà phê nguyên chất và sữa đặc béo ngậy.',
+    },
+    {
+      name: 'Bạc Xỉu',
+      price: 25000,
+      imageUrl: '/uploads/products/bac-xiu.jpg',
+      description:
+        'Vị ngọt béo của sữa hòa quyện chút đắng nhẹ của cà phê pha phin.',
+    },
+    {
+      name: 'Cacao',
+      price: 25000,
+      imageUrl: '/uploads/products/cacao.jpg',
+      description: 'Cacao nguyên chất thơm lừng, ấm áp và giàu năng lượng.',
+    },
+    {
+      name: 'Coffee Hạnh Nhân',
+      price: 25000,
+      imageUrl: '/uploads/products/coffee-hanh-nhan.jpg',
+      description:
+        'Cà phê kết hợp sốt hạnh nhân thơm bùi, hậu vị êm dịu độc đáo.',
+    },
+    {
+      name: 'Coffee Kem Muối',
+      price: 25000,
+      imageUrl: '/uploads/products/coffee-kem-muoi.jpg',
+      description:
+        'Lớp kem béo mặn sánh mịn hòa quyện hoàn hảo với cà phê đậm đà.',
+    },
   ];
 
   for (const item of coffeeProducts) {
@@ -275,20 +318,49 @@ async function main() {
         price: item.price,
         stock: 100,
         categoryId: categoryCoffee.id,
-        imageUrl: '/uploads/default-product.jpg',
-        description: `Sản phẩm ${item.name} được pha chế từ những nguyên liệu chọn lọc nhất.`,
+        imageUrl: item.imageUrl,
+        description:
+          item.description ??
+          `Sản phẩm ${item.name} được pha chế từ những nguyên liệu chọn lọc nhất.`,
         sizes: { create: standardSizes },
       },
     });
   }
 
-  const milkTeaProducts = [
-    { name: 'Trà Xanh Sữa Thái', price: 20000 },
-    { name: 'Trà Sữa Đông Dương', price: 30000 },
-    { name: 'Trà Sữa Ô Long', price: 25000 },
-    { name: 'Trà Sữa Hạnh Nhân', price: 30000 },
-    { name: 'Trà Sữa Nguyên Lá', price: 25000 },
-    { name: 'Trà Sữa Ô Long Kem Trứng', price: 30000 },
+  const milkTeaProducts: SeedProductItem[] = [
+    {
+      name: 'Trà Sữa Thái Xanh',
+      price: 20000,
+      imageUrl: '/uploads/products/tra-xanh-sua-thai.jpg',
+      description:
+        'Trà xanh Thái Lan thơm thảo mộc thanh mát cùng sữa ngọt béo.',
+    },
+    {
+      name: 'Trà Sữa Truyền Thống',
+      price: 30000,
+      imageUrl: '/uploads/products/tra-sua-truyen-thong.jpg',
+      description: 'Công thức trà sữa cổ điển với hương vị đậm đà, khó quên.',
+    },
+    {
+      name: 'Trà Sữa Ô Long',
+      price: 25000,
+      imageUrl: '/uploads/products/tra-sua-o-long.jpg',
+      description: 'Trà Ô Long thượng hạng rang chín tới kết hợp sữa mịn màng.',
+    },
+    {
+      name: 'Trà Sữa Hạnh Nhân',
+      price: 30000,
+      imageUrl: '/uploads/products/tra-sua-hanh-nhan.jpg',
+      description:
+        'Hương thơm nồng nàn của hạt hạnh nhân trong từng ngụm trà sữa.',
+    },
+    {
+      name: 'Trà Sữa Ô Long Kem Trứng',
+      price: 30000,
+      imageUrl: '/uploads/products/tra-sua-o-long-kem-trung.jpg',
+      description:
+        'Lớp kem trứng nướng thơm lừng, ngầy ngậy trên nền trà Ô Long đậm vị.',
+    },
   ];
 
   for (const item of milkTeaProducts) {
@@ -298,20 +370,56 @@ async function main() {
         price: item.price,
         stock: 100,
         categoryId: categoryMilkTea.id,
-        imageUrl: '/uploads/default-product.jpg',
-        description: `Ly ${item.name} thơm ngon đậm đà.`,
+        imageUrl: item.imageUrl,
+        description: item.description ?? `Ly ${item.name} thơm ngon đậm đà.`,
         sizes: { create: standardSizes },
       },
     });
   }
 
-  const fruitTeaProducts = [
-    { name: 'Trà Đào', price: 30000 },
-    { name: 'Trà Dâu', price: 30000 },
-    { name: 'Trà Sả Đào', price: 30000 },
-    { name: 'Trà Lài Vải', price: 30000 },
-    { name: 'Trà Ổi Hồng', price: 30000 },
-    { name: 'Trà Đào Chanh', price: 30000 },
+  const fruitTeaProducts: SeedProductItem[] = [
+    {
+      name: 'Trà Tắc',
+      price: 25000,
+      imageUrl: '/uploads/products/tra-tac.jpg',
+      description:
+        'Hương thơm nồng nàn đặc trưng của tắc tươi hòa quyện nền trà thanh dịu, mát lạnh giải nhiệt ngày hè.',
+    },
+    {
+      name: 'Trà Dâu',
+      price: 30000,
+      imageUrl: '/uploads/products/tra-dau.jpg',
+      description:
+        'Vị chua ngọt bùng nổ từ dâu tây tươi mọng nước trên nền trà thanh dịu.',
+    },
+    {
+      name: 'Trà Đào Cam Sả',
+      price: 30000,
+      imageUrl: '/uploads/products/tra-dao-cam-sa.jpg',
+      description:
+        'Hương sả the mát kết hợp đào thanh ngọt tạo nên thức uống giải nhiệt đỉnh cao.',
+    },
+    {
+      name: 'Trà Lài Vải',
+      price: 30000,
+      imageUrl: '/uploads/products/tra-lai-vai.jpg',
+      description:
+        'Hương lài tinh tế kết hợp trái vải thiều mọng nước ngọt ngào.',
+    },
+    {
+      name: 'Trà Ổi Hồng',
+      price: 30000,
+      imageUrl: '/uploads/products/tra-oi-hong.jpg',
+      description:
+        'Màu hồng rực rỡ cùng hương ổi xá lị tươi ngon ngập tràn sức sống.',
+    },
+    {
+      name: 'Trà Chanh Dây',
+      price: 30000,
+      imageUrl: '/uploads/products/tra-xoai-chanh-day.jpg',
+      description:
+        'Vị chua đậm đà từ cốt chanh dây tươi nguyên chất, bừng tỉnh năng lượng.',
+    },
   ];
 
   for (const item of fruitTeaProducts) {
@@ -321,13 +429,15 @@ async function main() {
         price: item.price,
         stock: 100,
         categoryId: categoryFruitTea.id,
-        imageUrl: '/uploads/default-product.jpg',
-        description: `Ly ${item.name} tươi mát lạnh, giải nhiệt ngày hè.`,
+        imageUrl: item.imageUrl,
+        description:
+          item.description ??
+          `Ly ${item.name} tươi mát lạnh, giải nhiệt ngày hè.`,
         sizes: { create: teaSizes },
       },
     });
   }
-  console.log('Đã tạo menu 18 món');
+  console.log('Đã tạo menu 18 món kèm ảnh riêng biệt');
 
   // 7. Đơn hàng mẫu
   const products = await prisma.product.findMany({
@@ -387,8 +497,8 @@ async function main() {
             toppingId: t.id,
             toppingName: t.name,
             price: t.price,
-            qty: 1, // <--- ĐÃ BỔ SUNG QTY
-            lineTotal: t.price * 1, // <--- ĐÃ BỔ SUNG LINETOTAL CHO TOPPING
+            qty: 1,
+            lineTotal: t.price * 1,
           })),
         },
       });
@@ -419,10 +529,10 @@ async function main() {
         userId: customer.id,
         couponId: coupon?.id,
         status: spec.status,
-        total: subtotal, // <--- GHI NHẬN TỔNG GỐC VÀO TOTAL
+        total: subtotal,
         discountCode: coupon?.code,
         discountAmount: discount,
-        finalAmount: finalAmount, // <--- ĐÃ BỔ SUNG FINAL AMOUNT
+        finalAmount: finalAmount,
         loyaltyPointsEarned: points,
         createdAt: spec.createdAt,
         updatedAt: new Date(
@@ -454,7 +564,7 @@ async function main() {
         data: {
           orderId: order.id,
           idempotencyKey: `seed-${randomUUID()}`,
-          amount: finalAmount, // <--- SỬ DỤNG FINAL AMOUNT CHO THANH TOÁN
+          amount: finalAmount,
           method,
           status: PaymentStatus.FAILED,
           createdAt: spec.createdAt,
@@ -466,10 +576,10 @@ async function main() {
         data: {
           orderId: order.id,
           idempotencyKey: `seed-${randomUUID()}`,
-          amount: finalAmount, // <--- SỬ DỤNG FINAL AMOUNT CHO THANH TOÁN
+          amount: finalAmount,
           method,
           status: PaymentStatus.SUCCESS,
-          transactionId: mockTransactionId, // <--- ĐÃ BỔ SUNG TRANSACTION ID
+          transactionId: mockTransactionId,
           createdAt: payAt,
         },
       });
@@ -478,7 +588,7 @@ async function main() {
         data: {
           orderId: order.id,
           idempotencyKey: `seed-${randomUUID()}`,
-          amount: finalAmount, // <--- SỬ DỤNG FINAL AMOUNT CHO THANH TOÁN
+          amount: finalAmount,
           method,
           status: PaymentStatus.FAILED,
           createdAt: payAt,
