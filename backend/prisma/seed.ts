@@ -5,6 +5,8 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  NotificationAudience,
+  NotificationType,
 } from '@prisma/client';
 import type { Prisma, Coupon } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -81,6 +83,7 @@ async function main() {
 
   console.log('Đang dọn dẹp dữ liệu cũ...');
   // Xóa theo thứ tự bảng con -> bảng cha để không vi phạm khóa ngoại
+  await prisma.notification.deleteMany();
   await prisma.orderItemTopping.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.payment.deleteMany();
@@ -502,6 +505,77 @@ async function main() {
       data: { loyaltyPoints: { increment: points } },
     });
   }
+
+  // 8. Thông báo mẫu cho Admin
+  // 8.1 Cảnh báo tồn kho: 1 sản phẩm sắp hết, 1 sản phẩm hết hàng
+  const stockDemo = [
+    { product: products[3], stock: 8 },
+    { product: products[10], stock: 0 },
+  ];
+  for (const { product, stock } of stockDemo) {
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { stock, version: { increment: 1 } },
+    });
+    const isOut = stock === 0;
+    await prisma.notification.create({
+      data: {
+        audience: NotificationAudience.ADMIN,
+        type: isOut ? NotificationType.OUT_OF_STOCK : NotificationType.LOW_STOCK,
+        title: isOut
+          ? `Hết hàng: ${product.name}`
+          : `Sắp hết hàng: ${product.name}`,
+        message: isOut
+          ? 'Sản phẩm đã hết hàng, cần nhập thêm'
+          : `Chỉ còn ${stock} sản phẩm trong kho`,
+        href: '/products',
+        productId: product.id,
+        dedupeKey: `STOCK:${product.id}`,
+      },
+    });
+  }
+
+  // 8.2 Thông báo đơn hàng từ các đơn gần nhất cần chú ý
+  const recentOrders = await prisma.order.findMany({
+    where: {
+      status: {
+        in: [
+          OrderStatus.PENDING,
+          OrderStatus.PAID,
+          OrderStatus.PAYMENT_FAILED,
+        ],
+      },
+    },
+    include: { user: { select: { name: true, email: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 8,
+  });
+  for (const o of recentOrders) {
+    const who = o.user?.name || o.user?.email || `Khách #${o.userId}`;
+    const amount = `${o.finalAmount.toLocaleString('vi-VN')}đ`;
+    const isFailed = o.status === OrderStatus.PAYMENT_FAILED;
+    const isPending = o.status === OrderStatus.PENDING;
+    await prisma.notification.create({
+      data: {
+        audience: NotificationAudience.ADMIN,
+        type: isFailed
+          ? NotificationType.PAYMENT_FAILED
+          : isPending
+            ? NotificationType.ORDER_NEW
+            : NotificationType.ORDER_UPDATE,
+        title: isFailed
+          ? `Thanh toán thất bại: đơn #${o.id}`
+          : isPending
+            ? `Đơn mới #${o.id}`
+            : `Đơn #${o.id} đã thanh toán`,
+        message: `${who} · ${amount}${isFailed || isPending ? '' : ' · cần chuẩn bị'}`,
+        href: '/orders/all',
+        orderId: o.id,
+        createdAt: o.createdAt,
+      },
+    });
+  }
+  console.log('Đã tạo thông báo mẫu');
 
   const summary = await prisma.order.groupBy({
     by: ['status'],
