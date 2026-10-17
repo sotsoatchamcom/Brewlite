@@ -10,6 +10,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ReportsModule } from './reports/reports.module';
     CouponsModule,
     NotificationsModule,
     ReportsModule,
+    DashboardModule,
     // ConfigModule.forRoot({ isGlobal: true }),
   ],
   controllers: [],
