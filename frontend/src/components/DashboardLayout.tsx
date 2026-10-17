@@ -75,11 +75,12 @@ export default function DashboardLayout({
 
   const [ordersOpen, setOrdersOpen] = useState(true);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [profileOpen, setProfileOpen] = useState(false); // Trạng thái mở menu góc trên bên phải
 
   // Lưu trữ danh sách đơn hàng thực tế từ Backend
   const [realOrders, setRealOrders] = useState<any[]>([]);
 
-  // 1. Gọi API lấy đủ 100 đơn hàng gần nhất để đếm chính xác số lượng
+  // Gọi API lấy đơn hàng đếm số lượng
   const fetchSidebarOrders = useCallback(async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/orders?page=1&limit=100`, {
@@ -98,7 +99,6 @@ export default function DashboardLayout({
     setMounted(true);
   }, []);
 
-  // Gọi API khi đăng nhập, khi đổi trang và tự động làm mới mỗi 15 giây
   useEffect(() => {
     if (isAuthenticated) {
       fetchSidebarOrders();
@@ -107,7 +107,6 @@ export default function DashboardLayout({
     }
   }, [isAuthenticated, pathname, fetchSidebarOrders]);
 
-  // Số thông báo chưa đọc (làm mới mỗi 10 giây và khi đổi trang)
   useEffect(() => {
     if (!isAuthenticated) return;
     const fetchUnread = async () => {
@@ -118,7 +117,9 @@ export default function DashboardLayout({
         if (!res.ok) return;
         const data = await res.json();
         const payload =
-          data && data.count === undefined && data.data && typeof data.data === "object" ? data.data : data;
+            data && data.count === undefined && data.data && typeof data.data === "object"
+                ? data.data
+                : data;
         setUnreadNotifs(Number(payload?.count) || 0);
       } catch {
         /* bỏ qua lỗi mạng */
@@ -129,13 +130,11 @@ export default function DashboardLayout({
     return () => clearInterval(timer);
   }, [isAuthenticated, pathname]);
 
-  // Route Guard
+  // Route Guard kiểm tra trạng thái đăng nhập
   useEffect(() => {
     if (mounted && !isLoading) {
       if (!isAuthenticated && pathname !== "/login") {
         router.replace("/login");
-      } else if (isAuthenticated && pathname === "/login") {
-        router.replace("/");
       }
     }
   }, [mounted, isLoading, isAuthenticated, pathname, router]);
@@ -156,7 +155,6 @@ export default function DashboardLayout({
     return null;
   }
 
-  // TÍNH TOÁN SỐ LƯỢNG ĐƠN HÀNG THẬT TỪ DATABASE
   const orderCounts = Object.fromEntries(
       FILTERS.map((f) => [f, countByFilter(realOrders as any, f)])
   ) as Record<OrderFilter, number>;
@@ -164,10 +162,21 @@ export default function DashboardLayout({
   const isOrdersPage = pathname.startsWith("/orders");
   const activeOrderFilter = isOrdersPage ? pathToFilter(pathname) : null;
 
-  const handleLogout = (e: React.MouseEvent) => {
-    e.preventDefault();
-    logout();
-    router.replace("/login");
+  // Hàm xử lý đăng xuất dứt điểm
+  const handleLogout = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    try {
+      if (logout) {
+        await logout();
+      }
+    } catch (err) {
+      console.error("Lỗi đăng xuất:", err);
+    }
+    if (typeof window !== "undefined") {
+      localStorage.clear();
+      sessionStorage.clear();
+      window.location.href = "/login";
+    }
   };
 
   const mainNavItems = [
@@ -217,18 +226,80 @@ export default function DashboardLayout({
               )}
             </Link>
 
-            <div className="flex items-center gap-2.5 pl-3 border-l border-border">
-              <div className="w-8 h-8 rounded-full bg-foreground text-background flex items-center justify-center shrink-0">
-                <UserIcon className="w-4 h-4" />
-              </div>
-              <div className="hidden sm:block text-left leading-tight">
-                <div className="text-xs font-semibold text-foreground">
-                  {user?.name || "Admin"}
+            {/* User Profile Dropdown Menu */}
+            <div className="relative pl-3 border-l border-border">
+              <button
+                  type="button"
+                  onClick={() => setProfileOpen((prev) => !prev)}
+                  className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-accent transition-colors text-left select-none focus:outline-none"
+              >
+                <div className="w-8 h-8 rounded-full bg-foreground text-background flex items-center justify-center shrink-0 font-bold text-xs shadow-sm">
+                  {user?.name ? (
+                      user.name.charAt(0).toUpperCase()
+                  ) : (
+                      <UserIcon className="w-4 h-4" />
+                  )}
                 </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {user?.email || "admin@brewlite.com"}
+                <div className="hidden sm:block text-left leading-tight">
+                  <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <span>{user?.name || "Quản Trị Viên"}</span>
+                    <ChevronDown
+                        className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 ${
+                            profileOpen ? "rotate-180" : ""
+                        }`}
+                    />
+                  </div>
+                  <div className="text-[11px] text-muted-foreground max-w-[150px] truncate">
+                    {user?.email || "admin@brewlite.com"}
+                  </div>
                 </div>
-              </div>
+              </button>
+
+              {/* Menu thả xuống */}
+              {profileOpen && (
+                  <>
+                    {/* Backdrop trong suốt click ra ngoài để tắt */}
+                    <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setProfileOpen(false)}
+                    />
+
+                    <div className="absolute right-0 mt-2 w-56 bg-card border border-border rounded-2xl shadow-xl py-2 z-50">
+                      <div className="px-4 py-2.5 border-b border-border mb-1">
+                        <p className="text-xs font-semibold text-foreground truncate">
+                          {user?.name || "Quản Trị Viên"}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground truncate">
+                          {user?.email || "admin@brewlite.com"}
+                        </p>
+                        <span className="inline-block mt-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary/10 text-primary uppercase">
+                      {user?.role || "ADMIN"}
+                    </span>
+                      </div>
+
+                      <Link
+                          href="/users"
+                          onClick={() => setProfileOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                      >
+                        <Users className="w-4 h-4 text-muted-foreground" />
+                        <span>Quản lý tài khoản</span>
+                      </Link>
+
+                      <button
+                          type="button"
+                          onClick={(e) => {
+                            setProfileOpen(false);
+                            handleLogout(e);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors text-left"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Đăng xuất</span>
+                      </button>
+                    </div>
+                  </>
+              )}
             </div>
           </div>
         </header>
@@ -306,9 +377,9 @@ export default function DashboardLayout({
                                 }`}
                             >
                               <div className="flex items-center gap-2.5">
-                                <span
-                                    className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`}
-                                />
+                          <span
+                              className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`}
+                          />
                                 <span>{cfg.label}</span>
                               </div>
                               <span
@@ -318,8 +389,8 @@ export default function DashboardLayout({
                                           : cfg.badge
                                   }`}
                               >
-                                {count}
-                              </span>
+                          {count}
+                        </span>
                             </Link>
                         );
                       })}
