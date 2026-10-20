@@ -60,21 +60,21 @@ enum NotificationAudience {
 // ---------------------------------------------------------
 
 model User {
-  id            Int       @id @default(autoincrement())
-  email         String    @unique
+  id            Int            @id @default(autoincrement())
+  email         String         @unique
   passwordHash  String
   name          String?
-  phone         String?   @unique
+  phone         String?        @unique
   gender        String?
-  loyaltyPoints Int       @default(0)
-  role          Role      @default(CUSTOMER)
-  isActive      Boolean   @default(true)
+  loyaltyPoints Int            @default(0)
+  role          Role           @default(CUSTOMER)
+  isActive      Boolean        @default(true)
 
   orders        Order[]
   notifications Notification[]
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 }
 
 model Category {
@@ -85,6 +85,7 @@ model Category {
   isActive    Boolean   @default(true)
 
   products    Product[]
+  toppings    Topping[] // Quan hệ nhiều - nhiều: Danh mục liên kết các loại Topping phù hợp
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -93,14 +94,14 @@ model Category {
 model Product {
   id          Int           @id @default(autoincrement())
   name        String
-  price       Int           // Đã đổi từ Float sang Int
+  price       Int           // Số nguyên VNĐ
   imageUrl    String?
   description String?       @db.Text
   stock       Int
-  version     Int           @default(1)
+  version     Int           @default(1) // Khóa lạc quan (Optimistic Locking Task 10)
   isActive    Boolean       @default(true)
 
-  categoryId  Int?          // Nullable
+  categoryId  Int?
   category    Category?     @relation(fields: [categoryId], references: [id])
 
   sizes       ProductSize[]
@@ -113,7 +114,7 @@ model Product {
 model ProductSize {
   id          Int         @id @default(autoincrement())
   name        String
-  surcharge   Int         // Đã đổi từ Float sang Int
+  surcharge   Int         // Phụ thu theo VNĐ
   isAvailable Boolean     @default(true)
 
   productId   Int
@@ -121,16 +122,17 @@ model ProductSize {
 
   orderItems  OrderItem[]
 
-  @@unique([productId, name]) // Ràng buộc unique kết hợp
+  @@unique([productId, name])
 }
 
 model Topping {
   id                Int                @id @default(autoincrement())
   name              String             @unique
-  price             Int                // Đã đổi từ Float sang Int
+  price             Int                // Số nguyên VNĐ
   imageUrl          String?
   isAvailable       Boolean            @default(true)
 
+  categories        Category[]         // Quan hệ nhiều - nhiều với Category
   orderItemToppings OrderItemTopping[]
 
   createdAt         DateTime           @default(now())
@@ -159,37 +161,37 @@ model Coupon {
 model Order {
   id                  Int         @id @default(autoincrement())
   userId              Int
-  couponId            Int?        // FK liên kết bảng Coupon
+  couponId            Int?
   status              OrderStatus @default(PENDING)
-  total               Int         // Đã đổi từ Float sang Int
+  total               Int         // Tổng tiền gốc trước giảm giá
   discountCode        String?
-  discountAmount      Int         @default(0) // Đã đổi từ Float sang Int
-  finalAmount         Int
-  loyaltyPointsEarned Int         @default(0) // Tránh cộng điểm 2 lần
+  discountAmount      Int         @default(0)
+  finalAmount         Int         // Tiền thực tế cần thanh toán
+  loyaltyPointsEarned Int         @default(0)
 
-  user        User               @relation(fields: [userId], references: [id])
-  coupon      Coupon?            @relation(fields: [couponId], references: [id])
-  orderItems  OrderItem[]
-  payments    Payment[]          // Quan hệ 1 - N với Payment
+  user                User        @relation(fields: [userId], references: [id])
+  coupon              Coupon?     @relation(fields: [couponId], references: [id])
+  orderItems          OrderItem[]
+  payments            Payment[]   // Quan hệ 1 - N để cho phép thử lại thanh toán khi thất bại
 
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt // Bổ sung theo yêu cầu Task 10
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
 }
 
 model OrderItem {
-  id            Int         @id @default(autoincrement())
+  id            Int                @id @default(autoincrement())
   orderId       Int
   productId     Int
   productSizeId Int?
 
-  // Các cột chụp lại tại thời điểm đặt hàng
+  // Snapshot giá trị sản phẩm tại thời điểm đặt hàng
   productName   String
   unitPrice     Int
   sizeName      String?
-  sizeSurcharge Int         @default(0)
+  sizeSurcharge Int                @default(0)
 
   qty           Int
-  lineTotal     Int         // Đã đổi từ Float sang Int
+  lineTotal     Int
 
   order         Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product       Product            @relation(fields: [productId], references: [id])
@@ -198,25 +200,25 @@ model OrderItem {
 }
 
 model OrderItemTopping {
-  id           Int       @id @default(autoincrement())
-  orderItemId  Int
-  toppingId    Int
+  id          Int       @id @default(autoincrement())
+  orderItemId Int
+  toppingId   Int
 
-  // Bản chụp thông tin topping tại thời điểm đặt
-  toppingName  String
-  price        Int       // Đã đổi từ Float sang Int
-  qty          Int       @default(1)
-  lineTotal    Int
+  // Snapshot thông tin topping tại thời điểm đặt
+  toppingName String
+  price       Int
+  qty         Int       @default(1)
+  lineTotal   Int
 
-  orderItem    OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
-  topping      Topping   @relation(fields: [toppingId], references: [id])
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  topping     Topping   @relation(fields: [toppingId], references: [id])
 }
 
 model Payment {
   id             Int           @id @default(autoincrement())
-  orderId        Int           // Đã bỏ @unique để thành quan hệ 1-N (cho phép thanh toán lại khi FAILED)
-  idempotencyKey String        @unique
-  amount         Int           // Đã đổi từ Float sang Int
+  orderId        Int
+  idempotencyKey String        @unique // Khóa chống trùng lặp thanh toán (Task 10)
+  amount         Int
   method         PaymentMethod
   status         PaymentStatus @default(SUCCESS)
   transactionId  String?
@@ -226,17 +228,18 @@ model Payment {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 }
+
 model Notification {
   id        Int                  @id @default(autoincrement())
   audience  NotificationAudience @default(ADMIN)
-  userId    Int?                 // Chỉ có giá trị khi audience = CUSTOMER
+  userId    Int?
   type      NotificationType
   title     String
   message   String               @db.VarChar(500)
-  href      String?              // Trang sẽ mở khi bấm vào thông báo
+  href      String?
   orderId   Int?
   productId Int?
-  dedupeKey String?              @unique // VD "STOCK:12" => mỗi sản phẩm chỉ có 1 cảnh báo tồn kho
+  dedupeKey String?              @unique
   isRead    Boolean              @default(false)
   readAt    DateTime?
 
