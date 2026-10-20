@@ -26,23 +26,25 @@ export class CreatePaymentDto {
 
   @ApiPropertyOptional({
     example: 65000,
-    description: 'Số tiền thanh toán',
+    description:
+      'Số tiền thanh toán (bỏ trống sẽ tự động lấy finalAmount của đơn)',
   })
   @IsOptional()
   @IsNumber({}, { message: 'Số tiền thanh toán phải là số' })
   amount?: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'idem-uuid-9876-5432-10',
-    description: 'Idempotency-Key chống thanh toán trùng lặp',
+    description:
+      'Idempotency-Key (Có thể truyền qua Body này hoặc qua HTTP Header)',
   })
-  @IsNotEmpty({ message: 'Idempotency-Key không được để trống' })
+  @IsOptional()
   @IsString()
-  idempotencyKey: string;
+  idempotencyKey?: string;
 
   @ApiPropertyOptional({
     example: false,
-    description: 'Bật cờ này bằng true để giả lập lỗi thanh toán',
+    description: 'Bật true để giả lập lỗi cổng thanh toán',
   })
   @IsOptional()
   @IsBoolean()
