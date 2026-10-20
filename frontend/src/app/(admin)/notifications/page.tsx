@@ -65,6 +65,16 @@ const META: Record<NotificationType, { icon: LucideIcon; box: string }> = {
   OUT_OF_STOCK: { icon: PackageX, box: "bg-red-50 text-red-600" },
 };
 
+// Trang mặc định khi thông báo không có href (ví dụ tạo tay, hoặc code cũ quên gán href)
+const DEFAULT_HREF: Record<NotificationType, string> = {
+  ORDER_NEW: "/orders/all",
+  ORDER_UPDATE: "/orders/all",
+  PAYMENT_FAILED: "/orders/all",
+  ORDER_CANCELLED: "/orders/all",
+  LOW_STOCK: "/products",
+  OUT_OF_STOCK: "/products",
+};
+
 // Chuẩn hoá phản hồi từ API: chấp nhận { data, meta } hoặc mảng thuần, và loại bỏ phản hồi lỗi
 function normalize(input: any, page: number): NotificationList {
   // Mở lớp bọc { data: { data: [...], meta } } nếu backend có interceptor
@@ -159,7 +169,8 @@ export default function NotificationsPage() {
 
   function openItem(n: AppNotification) {
     if (!n.isRead) act(() => api(`/${n.id}/read`, { method: "PATCH" }));
-    if (n.href) router.push(n.href);
+    const target = n.href?.startsWith("/") ? n.href : DEFAULT_HREF[n.type];
+    if (target) router.push(target);
   }
 
   const items = result?.data ?? [];
