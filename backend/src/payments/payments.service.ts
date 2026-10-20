@@ -10,6 +10,8 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  NotificationType,
+  NotificationAudience,
   Prisma,
 } from '@prisma/client';
 
@@ -22,9 +24,9 @@ export class PaymentsService {
       createPaymentDto;
 
     // 1. KIỂM TRA IDEMPOTENCY (Task 10 - Yêu cầu 2)
-    // Nếu request gửi lại cùng một Idempotency-Key, trả về kết quả cũ đã lưu
-    const existingPayment = await this.prisma.payment.findFirst({
-      where: { idempotencyKey },
+    // Tận dụng index @unique bằng findUnique
+    const existingPayment = await this.prisma.payment.findUnique({
+      where: { idempotencyKey: idempotencyKey! },
       include: { order: true },
     });
 
@@ -51,7 +53,6 @@ export class PaymentsService {
       throw new NotFoundException(`Không tìm thấy đơn hàng #${orderId}`);
     }
 
-    // Chặn nếu đơn hàng đã được thanh toán hoặc đã hoàn tất/hủy
     if (order.status === OrderStatus.PAID) {
       throw new ConflictException(
         'Đơn hàng này đã được thanh toán thành công!',
@@ -68,7 +69,6 @@ export class PaymentsService {
       );
     }
 
-    // Theo State Machine: Chỉ nhận thanh toán khi đơn ở PENDING hoặc thử lại từ PAYMENT_FAILED
     if (
       order.status !== OrderStatus.PENDING &&
       order.status !== OrderStatus.PAYMENT_FAILED
@@ -78,10 +78,7 @@ export class PaymentsService {
       );
     }
 
-    // LẤY ĐÚNG SỐ TIỀN THỰC TẾ PHẢI TRẢ (finalAmount sau khi trừ coupon)
-    const paymentAmount = createPaymentDto.amount ?? order.finalAmount;
-
-    // Kiểm tra nếu client truyền amount mà nhỏ hơn số tiền đơn hàng yêu cầu
+    const paymentAmount = order.finalAmount;
     if (
       createPaymentDto.amount &&
       createPaymentDto.amount < order.finalAmount
@@ -91,17 +88,15 @@ export class PaymentsService {
       );
     }
 
-    // Sinh mã giao dịch ngẫu nhiên mô phỏng cổng thanh toán
     const transactionId = `TXN_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // 3. MOCK PAYMENT SERVICE: NHÁNH GIẢ LẬP THẤT BẠI (Task 8)
+    // 3. MOCK PAYMENT: GIẢ LẬP THẤT BẠI (Task 8)
     if (simulateFailure) {
       return this.prisma.$transaction(async (tx) => {
-        // Lưu lại giao dịch FAILED vào bảng Payment để phục vụ tra cứu
         const failedPayment = await tx.payment.create({
           data: {
             orderId: order.id,
-            idempotencyKey,
+            idempotencyKey: idempotencyKey!,
             amount: paymentAmount,
             method: method as PaymentMethod,
             status: PaymentStatus.FAILED,
@@ -109,10 +104,20 @@ export class PaymentsService {
           },
         });
 
-        // Chuyển trạng thái đơn sang PAYMENT_FAILED
         await tx.order.update({
           where: { id: orderId },
           data: { status: OrderStatus.PAYMENT_FAILED },
+        });
+
+        // Bắn thông báo cảnh báo lỗi thanh toán cho Admin
+        await tx.notification.create({
+          data: {
+            audience: NotificationAudience.ADMIN,
+            type: NotificationType.PAYMENT_FAILED,
+            title: `Thanh toán thất bại cho đơn #${order.id}`,
+            message: `Khách hàng thanh toán không thành công qua ${method} số tiền ${paymentAmount.toLocaleString('vi-VN')}đ`,
+            orderId: order.id,
+          },
         });
 
         return {
@@ -124,14 +129,13 @@ export class PaymentsService {
       });
     }
 
-    // 4. MOCK PAYMENT SERVICE: NHÁNH THÀNH CÔNG (Prisma Transaction)
+    // 4. MOCK PAYMENT: NHÁNH THÀNH CÔNG
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // a. Lưu bản ghi Payment với status SUCCESS
         const payment = await tx.payment.create({
           data: {
             orderId: order.id,
-            idempotencyKey,
+            idempotencyKey: idempotencyKey!,
             amount: paymentAmount,
             method: method as PaymentMethod,
             status: PaymentStatus.SUCCESS,
@@ -139,8 +143,7 @@ export class PaymentsService {
           },
         });
 
-        // b. Tích lũy điểm thưởng loyalty cho khách sau khi đơn PAID (Task 10 - Yêu cầu 4)
-        // 10.000 VNĐ = 1 điểm tích lũy dựa trên số tiền thực trả
+        // Tích điểm Loyalty Points (Task 10 - Yêu cầu 4)
         const pointsEarned = Math.floor(paymentAmount / 10000);
 
         if (order.userId && pointsEarned > 0) {
@@ -152,12 +155,22 @@ export class PaymentsService {
           });
         }
 
-        // c. Chuyển trạng thái đơn sang PAID và cập nhật lại điểm tích lũy thực tế
         await tx.order.update({
           where: { id: order.id },
           data: {
             status: OrderStatus.PAID,
             loyaltyPointsEarned: pointsEarned,
+          },
+        });
+
+        // Tạo thông báo đơn mới đã thanh toán cho Admin
+        await tx.notification.create({
+          data: {
+            audience: NotificationAudience.ADMIN,
+            type: NotificationType.ORDER_UPDATE,
+            title: `Đơn hàng #${order.id} đã thanh toán thành công`,
+            message: `Nhận ${paymentAmount.toLocaleString('vi-VN')}đ qua ${method}. Mời Barista bắt đầu pha chế!`,
+            orderId: order.id,
           },
         });
 
@@ -170,13 +183,12 @@ export class PaymentsService {
         };
       });
     } catch (error) {
-      // Bắt lỗi xung đột Idempotency-Key khi có 2 request gửi đồng thời (Task 10 Concurrency)
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
         const racePayment = await this.prisma.payment.findUnique({
-          where: { idempotencyKey },
+          where: { idempotencyKey: idempotencyKey! },
         });
         return {
           success: racePayment?.status === PaymentStatus.SUCCESS,

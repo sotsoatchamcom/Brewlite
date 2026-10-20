@@ -6,6 +6,7 @@ import {
   Param,
   Headers,
   ParseIntPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
@@ -31,9 +32,13 @@ export class PaymentsController {
     @Body() createPaymentDto: CreatePaymentDto,
     @Headers('idempotency-key') headerKey?: string,
   ) {
-    if (!createPaymentDto.idempotencyKey && headerKey) {
-      createPaymentDto.idempotencyKey = headerKey;
+    const key = createPaymentDto.idempotencyKey || headerKey;
+    if (!key) {
+      throw new BadRequestException(
+        'Bắt buộc phải cung cấp Idempotency-Key qua HTTP Header hoặc Body!',
+      );
     }
+    createPaymentDto.idempotencyKey = key;
     return this.paymentsService.create(createPaymentDto);
   }
 
