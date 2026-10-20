@@ -45,7 +45,7 @@ const PAID_GROUP: OrderStatus[] = [
   OrderStatus.COMPLETED,
 ];
 
-// Đơn tạo cách hiện tại bao nhiêu giờ (min, max) tùy trạng thái, cho dữ liệu trông thực tế
+// Đơn tạo cách hiện tại bao nhiêu giờ (min, max) tùy trạng thái
 const AGE_HOURS: Record<OrderStatus, [number, number]> = {
   [OrderStatus.COMPLETED]: [72, 336],
   [OrderStatus.CANCELLED]: [24, 240],
@@ -58,7 +58,7 @@ const AGE_HOURS: Record<OrderStatus, [number, number]> = {
 
 // Phân bố khớp màn "Đơn hàng" của admin:
 // Tiếp nhận 27 | Đang xử lí 4 | Hoàn thành 9 | Đã huỷ 3  => Tất cả 43
-// + 1 đơn PENDING và 1 đơn PAYMENT_FAILED (chưa thanh toán, không hiện ở các tab)
+// + 1 đơn PENDING và 1 đơn PAYMENT_FAILED
 const STATUS_PLAN: OrderStatus[] = [
   ...Array(27).fill(OrderStatus.PAID),
   ...Array(2).fill(OrderStatus.PREPARING),
@@ -78,7 +78,6 @@ function calcDiscount(coupon: Coupon, subtotal: number): number {
   return Math.min(capped, subtotal);
 }
 
-// Interface định nghĩa sản phẩm với ảnh và mô tả riêng
 interface SeedProductItem {
   name: string;
   price: number;
@@ -90,7 +89,6 @@ async function main() {
   const saltRounds = 10;
 
   console.log('Đang dọn dẹp dữ liệu cũ...');
-  // Xóa theo thứ tự bảng con -> bảng cha để không vi phạm khóa ngoại
   await prisma.notification.deleteMany();
   await prisma.orderItemTopping.deleteMany();
   await prisma.orderItem.deleteMany();
@@ -152,59 +150,86 @@ async function main() {
   }
   console.log('Đã tạo Admin và 4 khách hàng demo');
 
-  // 2. Danh mục
-  const categoryCoffee = await prisma.category.create({
+  // 2. Tạo Topping trước để lấy ID liên kết với Danh mục
+  const topWhitePearl = await prisma.topping.create({
     data: {
-      name: 'Cà Phê',
-      description: 'Cà phê',
-      imageUrl: '/uploads/categories/cat-coffee.jpg',
+      name: 'Trân châu trắng',
+      price: 10000,
+      imageUrl: '/uploads/toppings/topping-tranchautrang.jpg',
     },
   });
-  const categoryMilkTea = await prisma.category.create({
+  const topMacchiato = await prisma.topping.create({
     data: {
-      name: 'Trà Sữa Pha Máy',
-      description: 'Trà sữa',
-      imageUrl: '/uploads/categories/cat-milktea.jpg',
+      name: 'Kem Macchiato',
+      price: 15000,
+      imageUrl: '/uploads/toppings/topping-macchiato.jpg',
     },
   });
-  const categoryFruitTea = await prisma.category.create({
+  const topPeachJelly = await prisma.topping.create({
     data: {
-      name: 'Trà Trái Cây',
-      description: 'Trà trái cây',
-      imageUrl: '/uploads/categories/cat-fruittea.jpg',
+      name: 'Thạch đào',
+      price: 10000,
+      imageUrl: '/uploads/toppings/topping-thachdao.jpg',
+    },
+  });
+  const topBlackPearl = await prisma.topping.create({
+    data: {
+      name: 'Trân châu đen',
+      price: 5000,
+      imageUrl: '/uploads/toppings/topping-tranchauden.jpg',
+    },
+  });
+  const topFruitJelly = await prisma.topping.create({
+    data: {
+      name: 'Thạch trái cây',
+      price: 10000,
+      imageUrl: '/uploads/toppings/topping-thachtraicay.jpg',
     },
   });
 
-  // 3. Topping
-  await prisma.topping.createMany({
-    data: [
-      {
-        name: 'Trân châu trắng',
-        price: 10000,
-        imageUrl: '/uploads/toppings/topping-tranchautrang.jpg',
-      },
-      {
-        name: 'Kem Macchiato',
-        price: 15000,
-        imageUrl: '/uploads/toppings/topping-macchiato.jpg',
-      },
-      {
-        name: 'Thạch đào',
-        price: 10000,
-        imageUrl: '/uploads/toppings/topping-thachdao.jpg',
-      },
-      {
-        name: 'Trân châu đen',
-        price: 5000,
-        imageUrl: '/uploads/toppings/topping-tranchauden.jpg',
-      },
-      {
-        name: 'Thạch trái cây',
-        price: 10000,
-        imageUrl: '/uploads/toppings/topping-thachtraicay.jpg',
-      },
-    ],
+  const allToppings = [
+    topWhitePearl,
+    topMacchiato,
+    topPeachJelly,
+    topBlackPearl,
+    topFruitJelly,
+  ];
+  console.log('Đã tạo 5 loại topping');
+
+  // 3. Tạo Danh mục và gán Topping theo đúng nghiệp vụ
+  // 3.1 Cà phê: Không hỗ trợ topping
+  const categoryCoffee = await prisma.category.create({
+    data: {
+      name: 'Cà Phê',
+      description: 'Cà phê nguyên chất đậm đà',
+      imageUrl: '/uploads/categories/cat-coffee.jpg',
+    },
   });
+
+  // 3.2 Trà sữa: Full 5 loại topping
+  const categoryMilkTea = await prisma.category.create({
+    data: {
+      name: 'Trà Sữa Pha Máy',
+      description: 'Trà sữa thơm ngon đậm vị trà',
+      imageUrl: '/uploads/categories/cat-milktea.jpg',
+      toppings: {
+        connect: allToppings.map((t) => ({ id: t.id })),
+      },
+    },
+  });
+
+  // 3.3 Trà trái cây: Chỉ có Trân châu trắng và Thạch trái cây
+  const categoryFruitTea = await prisma.category.create({
+    data: {
+      name: 'Trà Trái Cây',
+      description: 'Trà trái cây mát lạnh giải nhiệt',
+      imageUrl: '/uploads/categories/cat-fruittea.jpg',
+      toppings: {
+        connect: [{ id: topWhitePearl.id }, { id: topFruitJelly.id }],
+      },
+    },
+  });
+  console.log('Đã liên kết topping phù hợp cho từng danh mục');
 
   // 4. Mã khuyến mãi
   const now = new Date();
@@ -252,7 +277,6 @@ async function main() {
       },
     ],
   });
-  console.log('Đã tạo topping và mã khuyến mãi');
 
   // 5. Size
   const standardSizes = [
@@ -266,7 +290,7 @@ async function main() {
     { name: 'L', surcharge: 10000 },
   ];
 
-  // 6. Menu 18 món - Cấu hình đường dẫn ảnh riêng cho từng món
+  // 6. Menu 18 món
   const coffeeProducts: SeedProductItem[] = [
     {
       name: 'Coffee Đen',
@@ -319,9 +343,7 @@ async function main() {
         stock: 100,
         categoryId: categoryCoffee.id,
         imageUrl: item.imageUrl,
-        description:
-          item.description ??
-          `Sản phẩm ${item.name} được pha chế từ những nguyên liệu chọn lọc nhất.`,
+        description: item.description,
         sizes: { create: standardSizes },
       },
     });
@@ -371,7 +393,7 @@ async function main() {
         stock: 100,
         categoryId: categoryMilkTea.id,
         imageUrl: item.imageUrl,
-        description: item.description ?? `Ly ${item.name} thơm ngon đậm đà.`,
+        description: item.description,
         sizes: { create: standardSizes },
       },
     });
@@ -430,23 +452,26 @@ async function main() {
         stock: 100,
         categoryId: categoryFruitTea.id,
         imageUrl: item.imageUrl,
-        description:
-          item.description ??
-          `Ly ${item.name} tươi mát lạnh, giải nhiệt ngày hè.`,
+        description: item.description,
         sizes: { create: teaSizes },
       },
     });
   }
   console.log('Đã tạo menu 18 món kèm ảnh riêng biệt');
 
-  // 7. Đơn hàng mẫu
+  // 7. Tạo Đơn hàng mẫu (Tự động lọc Topping hợp lệ theo Danh mục)
   const products = await prisma.product.findMany({
-    include: { sizes: { where: { isAvailable: true } } },
+    include: {
+      sizes: { where: { isAvailable: true } },
+      category: {
+        include: {
+          toppings: { where: { isAvailable: true } },
+        },
+      },
+    },
     orderBy: { id: 'asc' },
   });
-  const toppings = await prisma.topping.findMany({
-    where: { isAvailable: true },
-  });
+
   const welcome = await prisma.coupon.findUniqueOrThrow({
     where: { code: 'WELCOME10' },
   });
@@ -470,15 +495,24 @@ async function main() {
     const customer = pick(customers);
 
     const items: Prisma.OrderItemUncheckedCreateWithoutOrderInput[] = [];
-    let subtotal = 0; // TỔNG TIỀN GỐC
+    let subtotal = 0;
     const itemCount = randInt(1, 3);
 
     for (let i = 0; i < itemCount; i++) {
       const product = pick(products);
       const size = pick(product.sizes);
-      const chosenToppings = shuffle(toppings).slice(0, randInt(0, 2));
-      const qty = randInt(1, 2);
 
+      // CHỈ CHỌN TOPPING NẰM TRONG DANH MỤC CHO PHÉP CỦA MÓN NÀY
+      const allowedToppings = product.category?.toppings ?? [];
+      const chosenToppings =
+        allowedToppings.length > 0
+          ? shuffle(allowedToppings).slice(
+              0,
+              randInt(0, Math.min(2, allowedToppings.length)),
+            )
+          : [];
+
+      const qty = randInt(1, 2);
       const toppingTotal = chosenToppings.reduce((sum, t) => sum + t.price, 0);
       const lineTotal = (product.price + size.surcharge + toppingTotal) * qty;
       subtotal += lineTotal;
@@ -498,7 +532,7 @@ async function main() {
             toppingName: t.name,
             price: t.price,
             qty: 1,
-            lineTotal: t.price * 1,
+            lineTotal: t.price,
           })),
         },
       });
@@ -518,9 +552,7 @@ async function main() {
       }
     }
 
-    // TỔNG TIỀN THỰC TRẢ (SAU KHI TRỪ KHUYẾN MÃI)
     const finalAmount = Math.max(0, subtotal - discount);
-
     const isPaid = PAID_GROUP.includes(spec.status);
     const points = isPaid ? Math.floor(finalAmount / 10000) : 0;
 
@@ -616,8 +648,7 @@ async function main() {
     });
   }
 
-  // 8. Thông báo mẫu cho Admin
-  // 8.1 Cảnh báo tồn kho: 1 sản phẩm sắp hết, 1 sản phẩm hết hàng
+  // 8. Cảnh báo tồn kho & Thông báo mẫu cho Admin
   const stockDemo = [
     { product: products[3], stock: 8 },
     { product: products[10], stock: 0 },
@@ -631,7 +662,9 @@ async function main() {
     await prisma.notification.create({
       data: {
         audience: NotificationAudience.ADMIN,
-        type: isOut ? NotificationType.OUT_OF_STOCK : NotificationType.LOW_STOCK,
+        type: isOut
+          ? NotificationType.OUT_OF_STOCK
+          : NotificationType.LOW_STOCK,
         title: isOut
           ? `Hết hàng: ${product.name}`
           : `Sắp hết hàng: ${product.name}`,
@@ -645,15 +678,10 @@ async function main() {
     });
   }
 
-  // 8.2 Thông báo đơn hàng từ các đơn gần nhất cần chú ý
   const recentOrders = await prisma.order.findMany({
     where: {
       status: {
-        in: [
-          OrderStatus.PENDING,
-          OrderStatus.PAID,
-          OrderStatus.PAYMENT_FAILED,
-        ],
+        in: [OrderStatus.PENDING, OrderStatus.PAID, OrderStatus.PAYMENT_FAILED],
       },
     },
     include: { user: { select: { name: true, email: true } } },

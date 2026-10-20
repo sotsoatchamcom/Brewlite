@@ -32,7 +32,7 @@ const ACTIVE_SIZES = {
   select: { id: true, name: true, surcharge: true },
 };
 
-// Khách hàng: id, tên, giá, ảnh, mô tả, tồn kho, danh mục, size (không lộ version/isActive)
+// Khách hàng: Lấy chi tiết món, bao gồm version (Optimistic Locking) và Topping theo danh mục
 const PUBLIC_SELECT = {
   id: true,
   name: true,
@@ -40,15 +40,25 @@ const PUBLIC_SELECT = {
   imageUrl: true,
   description: true,
   stock: true,
-  category: { select: { id: true, name: true } },
+  version: true, // Phục vụ kiểm tra Optimistic Locking (Task 10)
+  category: {
+    select: {
+      id: true,
+      name: true,
+      // Bổ sung lấy danh sách topping khả dụng được liên kết với danh mục món
+      toppings: {
+        where: { isAvailable: true },
+        select: { id: true, name: true, price: true, imageUrl: true },
+      },
+    },
+  },
   sizes: ACTIVE_SIZES,
 };
 
-// Admin: thêm isActive, version, categoryId
+// Admin: thêm isActive, categoryId
 const ADMIN_SELECT = {
   ...PUBLIC_SELECT,
   isActive: true,
-  version: true,
   categoryId: true,
 };
 
@@ -143,7 +153,7 @@ export class ProductsService {
       ...(includeHidden ? {} : { isActive: true }),
     };
 
-    const [totalRecords, data] = await this.prisma.$transaction([
+    const [totalRecords, rawData] = await this.prisma.$transaction([
       this.prisma.product.count({ where }),
       this.prisma.product.findMany({
         where,
@@ -153,6 +163,12 @@ export class ProductsService {
         orderBy: { id: 'desc' },
       }),
     ]);
+
+    // Fallback: nếu sản phẩm chưa có size trong DB, tự động gắn S/M/L mặc định
+    const data = rawData.map((p) => ({
+      ...p,
+      sizes: p.sizes && p.sizes.length > 0 ? p.sizes : DEFAULT_SIZES,
+    }));
 
     return {
       data,
@@ -176,7 +192,14 @@ export class ProductsService {
         `Không tìm thấy sản phẩm ID ${id} hoặc đã ngừng bán`,
       );
     }
-    return product;
+
+    return {
+      ...product,
+      sizes:
+        product.sizes && product.sizes.length > 0
+          ? product.sizes
+          : DEFAULT_SIZES,
+    };
   }
 
   // =========================================================
@@ -221,12 +244,6 @@ export class ProductsService {
     await this.assertNameAvailable(productData.name, id);
     await this.assertCategoryExists(productData.categoryId);
 
-    // sizes === undefined => giữ nguyên size cũ
-    // sizes là mảng rỗng  => ẨN toàn bộ size (isAvailable = false)
-    // sizes có phần tử    => đồng bộ theo tên:
-    //    - trùng tên với size cũ (kể cả size đang ẩn): cập nhật phụ thu + bật lại
-    //    - tên mới: thêm mới
-    //    - size cũ không còn trong danh sách: ẨN (không xóa vì đơn cũ còn tham chiếu)
     let sizesOperation: Prisma.ProductUncheckedUpdateInput['sizes'];
 
     if (sizes !== undefined) {
@@ -276,8 +293,6 @@ export class ProductsService {
     // phát hiện được và không ghi đè số lượng admin vừa sửa.
     const stockChanged = productData.stock !== undefined;
 
-    // Một lệnh update duy nhất => Prisma chạy trong 1 transaction:
-    // lỗi ở bất kỳ bước nào cũng không làm hỏng dữ liệu size cũ.
     const updated = await this.prisma.product.update({
       where: { id },
       data: {
@@ -288,7 +303,6 @@ export class ProductsService {
       select: ADMIN_SELECT,
     });
 
-    // Có ảnh mới => xóa file ảnh cũ
     if (productData.imageUrl && current.imageUrl !== productData.imageUrl) {
       await this.deleteImageFile(current.imageUrl);
     }
