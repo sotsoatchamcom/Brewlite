@@ -12,7 +12,7 @@ import {
 import { Type } from 'class-transformer';
 
 export class CreateOrderItemDto {
-  @ApiProperty({ example: 1, description: 'ID sản phẩm' })
+  @ApiProperty({ example: 1, description: 'ID sản phẩm đồ uống' })
   @IsNotEmpty({ message: 'Mã sản phẩm không được để trống' })
   @IsInt({ message: 'Mã sản phẩm phải là số nguyên' })
   productId: number;
@@ -30,23 +30,18 @@ export class CreateOrderItemDto {
 
   @ApiPropertyOptional({
     example: [1, 2],
-    description: 'Danh sách ID topping kèm theo',
+    description: 'Danh sách ID topping đi kèm',
   })
   @IsOptional()
-  @IsArray({ message: 'Topping IDs phải là một mảng' })
+  @IsArray({ message: 'Topping IDs phải là một mảng số nguyên' })
   @IsInt({ each: true, message: 'Mỗi topping ID phải là số nguyên' })
   toppingIds?: number[];
 }
 
 export class CreateOrderDto {
-  @ApiPropertyOptional({ example: 1, description: 'ID khách hàng' })
-  @IsOptional()
-  @IsInt({ message: 'Mã khách hàng phải là số nguyên' })
-  userId?: number;
-
   @ApiPropertyOptional({
     example: 'SUMMER20',
-    description: 'Mã giảm giá/khuyến mãi',
+    description: 'Mã giảm giá/khuyến mãi (bỏ trống nếu không dùng)',
   })
   @IsOptional()
   @IsString()
