@@ -97,6 +97,7 @@ export class OrdersController {
   // =========================================================================
 
   @Get()
+  @UseGuards(AuthGuard('jwt'), RolesGuard) //
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({

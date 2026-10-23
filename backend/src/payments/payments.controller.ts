@@ -5,12 +5,14 @@ import {
   Body,
   Param,
   Headers,
+  Query,
   ParseIntPipe,
   BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { QueryPaymentDto } from './dto/query-payment.dto';
 
 @ApiTags('payments')
 @Controller('payments')
@@ -43,9 +45,11 @@ export class PaymentsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Lấy toàn bộ lịch sử giao dịch thanh toán' })
-  findAll() {
-    return this.paymentsService.findAll();
+  @ApiOperation({
+    summary: 'Lấy danh sách giao dịch thanh toán (có phân trang & lọc)',
+  })
+  findAll(@Query() query: QueryPaymentDto) {
+    return this.paymentsService.findAll(query);
   }
 
   @Get(':id')

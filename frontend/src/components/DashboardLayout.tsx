@@ -28,6 +28,8 @@ import {
   filterToPath,
   type OrderFilter,
 } from "@/lib/orderStatus";
+// 1. Dùng apiFetch để tự động đính kèm Token xác thực Admin
+import { apiFetch } from "@/lib/api";
 
 const ORDER_SUBMENU_CONFIG: Record<
     OrderFilter,
@@ -60,8 +62,6 @@ const ORDER_SUBMENU_CONFIG: Record<
   },
 };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-
 export default function DashboardLayout({
                                           children,
                                         }: {
@@ -75,20 +75,16 @@ export default function DashboardLayout({
 
   const [ordersOpen, setOrdersOpen] = useState(true);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
-  const [profileOpen, setProfileOpen] = useState(false); // Trạng thái mở menu góc trên bên phải
+  const [profileOpen, setProfileOpen] = useState(false);
 
   // Lưu trữ danh sách đơn hàng thực tế từ Backend
   const [realOrders, setRealOrders] = useState<any[]>([]);
 
-  // Gọi API lấy đơn hàng đếm số lượng
+  // Gọi API lấy đơn hàng đếm số lượng cho Sidebar (có token)
   const fetchSidebarOrders = useCallback(async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/orders?page=1&limit=100`, {
-        cache: "no-store",
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      const list = Array.isArray(data) ? data : data.data || [];
+      const data = await apiFetch<any>("/orders?page=1&limit=100");
+      const list = Array.isArray(data) ? data : data?.data || [];
       setRealOrders(list);
     } catch (err) {
       console.error("Lỗi lấy dữ liệu orders cho Sidebar:", err);
@@ -107,22 +103,19 @@ export default function DashboardLayout({
     }
   }, [isAuthenticated, pathname, fetchSidebarOrders]);
 
+  // Lấy số lượng thông báo chưa đọc (có token)
   useEffect(() => {
     if (!isAuthenticated) return;
     const fetchUnread = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/notifications/unread-count`, {
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await apiFetch<any>("/notifications/unread-count");
         const payload =
             data && data.count === undefined && data.data && typeof data.data === "object"
                 ? data.data
                 : data;
         setUnreadNotifs(Number(payload?.count) || 0);
       } catch {
-        /* bỏ qua lỗi mạng */
+        /* Bỏ qua lỗi kết nối tạm thời */
       }
     };
     fetchUnread();
@@ -162,7 +155,6 @@ export default function DashboardLayout({
   const isOrdersPage = pathname.startsWith("/orders");
   const activeOrderFilter = isOrdersPage ? pathToFilter(pathname) : null;
 
-  // Hàm xử lý đăng xuất dứt điểm
   const handleLogout = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
     try {
@@ -255,10 +247,8 @@ export default function DashboardLayout({
                 </div>
               </button>
 
-              {/* Menu thả xuống */}
               {profileOpen && (
                   <>
-                    {/* Backdrop trong suốt click ra ngoài để tắt */}
                     <div
                         className="fixed inset-0 z-40"
                         onClick={() => setProfileOpen(false)}

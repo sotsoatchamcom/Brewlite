@@ -15,6 +15,8 @@ import {
     Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+// 1. Dùng apiFetch có sẵn của dự án để tự động đính kèm Token Admin
+import { apiFetch } from '@/lib/api';
 
 const STATUS_CONFIG: Record<OrderFilter, { label: string; color: string; bg: string; border: string; dot: string }> = {
     all: { label: 'All', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', dot: 'bg-slate-400' },
@@ -28,8 +30,6 @@ const statusStyle = (status: OrderStatus) => {
     const group = STATUS_TO_GROUP[status] ?? 'received';
     return STATUS_CONFIG[group];
 };
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export default function OrdersPage() {
     const [orders, setOrders] = useState<Order[]>([]);
@@ -47,17 +47,13 @@ export default function OrdersPage() {
     const [detailOrder, setDetailOrder] = useState<Order | null>(null);
     const [openDropdown, setOpenDropdown] = useState<number | string | null>(null);
 
-    // 1. Gọi API lấy danh sách đơn hàng thực tế (đã bổ sung limit=100)
+    // 1. Tải danh sách đơn hàng có token Admin
     const fetchOrders = async () => {
         try {
             setLoading(true);
-            const res = await fetch(`${BACKEND_URL}/orders?page=1&limit=100`);
-            if (!res.ok) throw new Error('Không thể tải danh sách đơn hàng');
-            const result = await res.json();
-
+            const result = await apiFetch<any>('/orders?page=1&limit=100');
             const rawOrders = Array.isArray(result) ? result : (result.data || []);
 
-            // Chuẩn hóa dữ liệu từ Prisma sang định dạng hiển thị của giao diện
             const normalizedOrders = rawOrders.map((o: any) => ({
                 ...o,
                 items: o.orderItems || o.items || [],
@@ -70,9 +66,9 @@ export default function OrdersPage() {
             }));
 
             setOrders(normalizedOrders);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Fetch error:', error);
-            toast.error('Không thể kết nối tới máy chủ NestJS (Port 3001)');
+            toast.error(error.message || 'Không thể tải danh sách đơn hàng');
         } finally {
             setLoading(false);
         }
@@ -82,14 +78,12 @@ export default function OrdersPage() {
         fetchOrders();
     }, []);
 
-    // Helper trích xuất thông tin an toàn
     const getOrderNumber = (o: any) => o.orderNumber ?? `#${o.id}`;
     const getCustomerName = (o: any) => o.customerName || (o.userId ? `Khách #${o.userId}` : 'Khách vãng lai');
     const getCustomerEmail = (o: any) => o.customerEmail || '';
     const getItemName = (i: any) => i.productName ?? i.product?.name ?? `Sản phẩm #${i.productId ?? ''}`;
     const getItemQty = (i: any) => i.qty ?? i.quantity ?? 1;
 
-    // Trích xuất Tên Size an toàn (tránh lỗi object React child)
     const getItemSize = (i: any): string => {
         if (i.sizeName && typeof i.sizeName === 'string') return i.sizeName;
         if (typeof i.size === 'string') return i.size;
@@ -97,7 +91,6 @@ export default function OrdersPage() {
         return 'M';
     };
 
-    // Tính đơn giá của 1 ly hoàn chỉnh (đã gồm phụ thu size + topping)
     const getItemPrice = (i: any) => {
         if (i.lineTotal && (i.qty || i.quantity)) {
             return Math.round(i.lineTotal / (i.qty || i.quantity));
@@ -105,7 +98,6 @@ export default function OrdersPage() {
         return i.unitPrice ?? i.price ?? i.product?.price ?? 0;
     };
 
-    // Trích xuất Topping an toàn từ OrderItemTopping[]
     const getItemToppings = (i: any): string[] => {
         if (Array.isArray(i.toppingNames)) return i.toppingNames;
         if (Array.isArray(i.toppings)) {
@@ -135,29 +127,21 @@ export default function OrdersPage() {
         })
         .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 
-    // 2. Chuyển trạng thái đơn hàng (Gọi PATCH /orders/:id/status vào backend State Machine)
+    // 2. Chuyển trạng thái đơn hàng (ĐÃ SỬA: dùng apiFetch mang theo Bearer Token)
     async function changeStatus(orderId: number | string, newStatus: OrderStatus) {
         try {
-            const res = await fetch(`${BACKEND_URL}/orders/${orderId}/status`, {
+            await apiFetch(`/orders/${orderId}/status`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus }),
             });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                toast.error(data.message || `Chuyển trạng thái thất bại`);
-                return;
-            }
 
             // Cập nhật lại UI ngay lập tức
             setOrders((prev) =>
                 prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
             );
             toast.success(`Đơn #${orderId} ➔ ${newStatus}`);
-        } catch (error) {
-            toast.error('Lỗi kết nối tới máy chủ backend');
+        } catch (error: any) {
+            toast.error(error.message || 'Lỗi khi cập nhật trạng thái đơn hàng');
         } finally {
             setOpenDropdown(null);
         }
@@ -188,7 +172,6 @@ export default function OrdersPage() {
                 </Button>
             </div>
 
-            {/* Status stat cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {GROUPS.map((s: OrderStatusGroup) => {
                     const cfg = STATUS_CONFIG[s];
@@ -213,7 +196,6 @@ export default function OrdersPage() {
                 })}
             </div>
 
-            {/* Filter tabs + search */}
             <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 w-full">
                 <div className="flex flex-1 bg-accent/70 rounded-xl p-1.5 gap-1.5 overflow-x-auto">
                     {tabs.map((s) => {
@@ -252,7 +234,6 @@ export default function OrdersPage() {
                 </div>
             </div>
 
-            {/* Orders table */}
             <div className="bg-card border border-border rounded-2xl overflow-visible">
                 <table className="w-full text-sm">
                     <thead className="bg-accent/40 border-b border-border">
@@ -360,7 +341,6 @@ export default function OrdersPage() {
                 </table>
             </div>
 
-            {/* Order detail modal */}
             <Dialog open={!!detailOrder} onOpenChange={() => setDetailOrder(null)}>
                 <DialogContent className="rounded-2xl sm:max-w-md">
                     <DialogHeader>
@@ -446,7 +426,6 @@ export default function OrdersPage() {
                 </DialogContent>
             </Dialog>
 
-            {/* Close dropdown on outside click */}
             {openDropdown && (
                 <div className="fixed inset-0 z-40" onClick={() => setOpenDropdown(null)} />
             )}

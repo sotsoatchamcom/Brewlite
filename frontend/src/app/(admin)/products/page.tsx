@@ -316,7 +316,6 @@ export default function ProductsPage() {
                             </td>
                             <td className="px-4 py-3.5">
                                 <div className="flex justify-center">
-                                    {/* EntityThumbnail siêu lớn size="xl" (80x80px) giống ảnh mẫu */}
                                     <EntityThumbnail
                                         src={product.imageUrl}
                                         alt={product.name}
@@ -327,32 +326,69 @@ export default function ProductsPage() {
                             </td>
                             <td className="px-5 py-4">
                                 <div className="flex flex-col">
-                    <span className="font-semibold text-base text-foreground">
-                      {product.name}
-                    </span>
+                                    <span className="font-semibold text-base text-foreground">
+                                        {product.name}
+                                    </span>
                                     <span className="text-xs font-medium text-muted-foreground mt-0.5">
-                      {product.category?.name || "No Category"}
-                    </span>
-                                    <span className="text-[11px] text-muted-foreground/70 mt-1 line-clamp-1 max-w-[200px]">
-                      {product.description}
-                    </span>
+                                        {product.category?.name || "No Category"}
+                                    </span>
+                                    {product.description && (
+                                        <span className="text-[11px] text-muted-foreground/70 mt-1 line-clamp-1 max-w-[220px]">
+                                            {product.description}
+                                        </span>
+                                    )}
+
+                                    {/* HIỂN THỊ DANH SÁCH SIZE & PHỤ THU */}
+                                    {product.sizes && product.sizes.length > 0 && (
+                                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                                            {product.sizes.map((s: any) => (
+                                                <span
+                                                    key={s.id || s.name}
+                                                    className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200/60"
+                                                >
+                                                    Size {s.name}
+                                                    {s.surcharge > 0
+                                                        ? ` (+${Number(s.surcharge).toLocaleString("vi-VN")}đ)`
+                                                        : " (+0đ)"}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             </td>
-                            <td className="px-5 py-4 text-right font-semibold text-base text-primary">
-                                {Number(product.price).toLocaleString("vi-VN")}đ
+                            <td className="px-5 py-4 text-right">
+                                <div className="flex flex-col items-end">
+                                    <span className="font-bold text-base text-primary">
+                                        {Number(product.price).toLocaleString("vi-VN")}đ
+                                    </span>
+
+                                    {/* CHI TIẾT TỔNG GIÁ TỪNG SIZE (Giá gốc + phụ thu) */}
+                                    {product.sizes && product.sizes.length > 0 && (
+                                        <div className="text-[11px] text-muted-foreground mt-1 space-y-0.5">
+                                            {product.sizes.map((s: any) => (
+                                                <div key={s.id || s.name} className="flex items-center gap-1 justify-end">
+                                                    <span className="text-muted-foreground/80 font-medium">Size {s.name}:</span>
+                                                    <span className="font-semibold text-foreground">
+                                                        {(Number(product.price) + Number(s.surcharge)).toLocaleString("vi-VN")}đ
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </td>
                             <td className="px-5 py-4 text-center">
-                  <span
-                      className={`inline-flex items-center justify-center min-w-[28px] h-7 px-2.5 rounded-full text-xs font-bold border ${
-                          product.stock > 10
-                              ? "bg-slate-100 text-slate-700 border-slate-200"
-                              : product.stock > 0
-                                  ? "bg-amber-50 text-amber-600 border-amber-200"
-                                  : "bg-red-50 text-red-600 border-red-200"
-                      }`}
-                  >
-                    {product.stock}
-                  </span>
+                                <span
+                                    className={`inline-flex items-center justify-center min-w-[28px] h-7 px-2.5 rounded-full text-xs font-bold border ${
+                                        product.stock > 10
+                                            ? "bg-slate-100 text-slate-700 border-slate-200"
+                                            : product.stock > 0
+                                                ? "bg-amber-50 text-amber-600 border-amber-200"
+                                                : "bg-red-50 text-red-600 border-red-200"
+                                    }`}
+                                >
+                                    {product.stock}
+                                </span>
                             </td>
                             <td className="px-5 py-4 text-center">
                                 <button
@@ -498,11 +534,11 @@ export default function ProductsPage() {
                                     <div className="flex flex-col items-center justify-center gap-2 px-4 py-5 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-accent/50 text-xs font-medium text-muted-foreground hover:text-foreground transition-all">
                                         <Upload className="w-5 h-5" />
                                         <span className="truncate max-w-[200px]">
-                      {form.file ? form.file.name : "Click to upload product image"}
-                    </span>
+                                            {form.file ? form.file.name : "Click to upload product image"}
+                                        </span>
                                         <span className="text-[11px] text-muted-foreground/70">
-                      PNG, JPG, WEBP up to 5MB
-                    </span>
+                                            PNG, JPG, WEBP up to 5MB
+                                        </span>
                                     </div>
                                     <input
                                         type="file"

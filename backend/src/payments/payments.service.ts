@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { QueryPaymentDto } from './dto/query-payment.dto';
 import {
   OrderStatus,
   PaymentMethod,
@@ -23,8 +24,7 @@ export class PaymentsService {
     const { orderId, idempotencyKey, method, simulateFailure } =
       createPaymentDto;
 
-    // 1. KIỂM TRA IDEMPOTENCY (Task 10 - Yêu cầu 2)
-    // Tận dụng index @unique bằng findUnique
+    // 1. KIỂM TRA IDEMPOTENCY TRƯỚC (Task 10 - Yêu cầu 2)
     const existingPayment = await this.prisma.payment.findUnique({
       where: { idempotencyKey: idempotencyKey! },
       include: { order: true },
@@ -43,7 +43,7 @@ export class PaymentsService {
       };
     }
 
-    // 2. TÌM ĐƠN HÀNG VÀ KIỂM TRA STATE MACHINE (Task 10 - Yêu cầu 1)
+    // 2. TÌM ĐƠN HÀNG VÀ KIỂM TRA SƠ BỘ (Task 10 - Yêu cầu 1)
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { user: true },
@@ -90,48 +90,95 @@ export class PaymentsService {
 
     const transactionId = `TXN_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // 3. MOCK PAYMENT: GIẢ LẬP THẤT BẠI (Task 8)
+    // 3. MOCK PAYMENT: GIẢ LẬP THẤT BẠI (Task 8 - Có bọc catch P2002)
     if (simulateFailure) {
-      return this.prisma.$transaction(async (tx) => {
-        const failedPayment = await tx.payment.create({
-          data: {
-            orderId: order.id,
-            idempotencyKey: idempotencyKey!,
-            amount: paymentAmount,
-            method: method as PaymentMethod,
-            status: PaymentStatus.FAILED,
-            transactionId,
-          },
-        });
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          const updateOrder = await tx.order.updateMany({
+            where: {
+              id: orderId,
+              status: { in: [OrderStatus.PENDING, OrderStatus.PAYMENT_FAILED] },
+            },
+            data: { status: OrderStatus.PAYMENT_FAILED },
+          });
 
-        await tx.order.update({
-          where: { id: orderId },
-          data: { status: OrderStatus.PAYMENT_FAILED },
-        });
+          if (updateOrder.count === 0) {
+            throw new ConflictException(
+              'Trạng thái đơn hàng đã thay đổi bởi một giao dịch khác!',
+            );
+          }
 
-        // Bắn thông báo cảnh báo lỗi thanh toán cho Admin
-        await tx.notification.create({
-          data: {
-            audience: NotificationAudience.ADMIN,
-            type: NotificationType.PAYMENT_FAILED,
-            title: `Thanh toán thất bại cho đơn #${order.id}`,
-            message: `Khách hàng thanh toán không thành công qua ${method} số tiền ${paymentAmount.toLocaleString('vi-VN')}đ`,
-            orderId: order.id,
-          },
-        });
+          const failedPayment = await tx.payment.create({
+            data: {
+              orderId: order.id,
+              idempotencyKey: idempotencyKey!,
+              amount: paymentAmount,
+              method: method as PaymentMethod,
+              status: PaymentStatus.FAILED,
+              transactionId,
+            },
+          });
 
-        return {
-          success: false,
-          message: 'Giao dịch thanh toán thất bại từ cổng thanh toán giả lập!',
-          orderStatus: OrderStatus.PAYMENT_FAILED,
-          data: failedPayment,
-        };
-      });
+          await tx.notification.create({
+            data: {
+              audience: NotificationAudience.ADMIN,
+              type: NotificationType.PAYMENT_FAILED,
+              title: `Thanh toán thất bại cho đơn #${order.id}`,
+              message: `Khách hàng thanh toán không thành công qua ${method} số tiền ${paymentAmount.toLocaleString('vi-VN')}đ`,
+              orderId: order.id,
+            },
+          });
+
+          return {
+            success: false,
+            message:
+              'Giao dịch thanh toán thất bại từ cổng thanh toán giả lập!',
+            orderStatus: OrderStatus.PAYMENT_FAILED,
+            data: failedPayment,
+          };
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          const racePayment = await this.prisma.payment.findUnique({
+            where: { idempotencyKey: idempotencyKey! },
+          });
+          return {
+            success: false,
+            message: 'Giao dịch thất bại (Idempotent concurrent response)',
+            isDuplicate: true,
+            data: racePayment,
+          };
+        }
+        throw error;
+      }
     }
 
-    // 4. MOCK PAYMENT: NHÁNH THÀNH CÔNG
+    // 4. MOCK PAYMENT: NHÁNH THÀNH CÔNG (Khóa nguyên tử atomic update)
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Khóa lạc quan chống Race Condition giữa 2 key khác nhau
+        const pointsEarned = Math.floor(paymentAmount / 10000);
+
+        const updateOrderResult = await tx.order.updateMany({
+          where: {
+            id: order.id,
+            status: { in: [OrderStatus.PENDING, OrderStatus.PAYMENT_FAILED] },
+          },
+          data: {
+            status: OrderStatus.PAID,
+            loyaltyPointsEarned: pointsEarned,
+          },
+        });
+
+        if (updateOrderResult.count === 0) {
+          throw new ConflictException(
+            'Đơn hàng này vừa được thanh toán thành công bởi một tiến trình khác!',
+          );
+        }
+
         const payment = await tx.payment.create({
           data: {
             orderId: order.id,
@@ -143,9 +190,6 @@ export class PaymentsService {
           },
         });
 
-        // Tích điểm Loyalty Points (Task 10 - Yêu cầu 4)
-        const pointsEarned = Math.floor(paymentAmount / 10000);
-
         if (order.userId && pointsEarned > 0) {
           await tx.user.update({
             where: { id: order.userId },
@@ -155,15 +199,6 @@ export class PaymentsService {
           });
         }
 
-        await tx.order.update({
-          where: { id: order.id },
-          data: {
-            status: OrderStatus.PAID,
-            loyaltyPointsEarned: pointsEarned,
-          },
-        });
-
-        // Tạo thông báo đơn mới đã thanh toán cho Admin
         await tx.notification.create({
           data: {
             audience: NotificationAudience.ADMIN,
@@ -201,21 +236,46 @@ export class PaymentsService {
     }
   }
 
-  findAll() {
-    return this.prisma.payment.findMany({
-      orderBy: { id: 'desc' },
-      include: {
-        order: {
-          select: {
-            id: true,
-            total: true,
-            finalAmount: true,
-            status: true,
-            user: { select: { id: true, name: true, email: true } },
+  // Tích hợp phân trang và lọc chuẩn theo QueryPaymentDto
+  async findAll(query?: QueryPaymentDto) {
+    const page = query?.page || 1;
+    const limit = query?.limit || 20;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.PaymentWhereInput = {
+      ...(query?.method ? { method: query.method } : {}),
+    };
+
+    const [data, total] = await Promise.all([
+      this.prisma.payment.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { id: 'desc' },
+        include: {
+          order: {
+            select: {
+              id: true,
+              total: true,
+              finalAmount: true,
+              status: true,
+              user: { select: { id: true, name: true, email: true } },
+            },
           },
         },
+      }),
+      this.prisma.payment.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
       },
-    });
+    };
   }
 
   async findOne(id: number) {
