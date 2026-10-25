@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import ProductCard from "@/components/shop/ProductCard";
 import CustomizeDialog from "@/components/shop/CustomizeDialog";
+import HeroBanner from "@/components/shop/HeroBanner";
 import { apiFetch } from "@/lib/api";
 import { matchesSearch } from "@/lib/shop";
 import type { Category, Product, Topping } from "@/lib/types";
@@ -53,7 +54,9 @@ export default function ShopMenuPage() {
 
     return (
         <>
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <HeroBanner />
+
+            <div id="menu" className="scroll-mt-24 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Chọn đồ uống</h1>
                     <p className="text-sm text-muted-foreground mt-0.5">Chọn món, size và topping, rồi thanh toán không cần tiền mặt.</p>
