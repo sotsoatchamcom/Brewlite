@@ -12,9 +12,8 @@ import { apiFetch } from "@/lib/api";
 import { calcUnitPrice, formatVND, sortedSizes, type CartItem } from "@/lib/shop";
 import type { Product, Topping } from "@/lib/types";
 
-/**
- * Sửa size/topping trong giỏ.
-*/
+
+/* Sửa size/topping trong giỏ. */
 export default function EditLineDialog({ item, onClose }: { item: CartItem; onClose: () => void }) {
     const { updateLine } = useCart();
     const [product, setProduct] = useState<Product | null>(null);

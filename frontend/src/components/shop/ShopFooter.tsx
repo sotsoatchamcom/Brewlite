@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Clock, Coffee, Mail, MapPin, Phone } from "lucide-react";
 
-// Thông tin mẫu: thay bằng thông tin thật của quán trước khi nộp.
 const CONTACT = {
     address: "273 An Dương Vương, Phường 3, Quận 5, TP. Hồ Chí Minh",
     phone: "0900 000 000",
@@ -9,7 +8,6 @@ const CONTACT = {
     hours: "07:00 – 22:00 mỗi ngày",
 };
 
-// lucide-react v1 không còn icon thương hiệu nên vẽ SVG trực tiếp. Thay href bằng trang thật của quán.
 const SOCIALS: { label: string; href: string; icon: ReactNode }[] = [
     {
         label: "Facebook", href: "https://facebook.com",
@@ -31,7 +29,6 @@ export default function ShopFooter() {
             <div className="max-w-6xl mx-auto px-6 pt-14 pb-12">
                 <div className="grid gap-10 md:grid-cols-3 md:gap-12 items-start">
                     
-                    {/* Cột 1: Thương hiệu & Slogan ngắn */}
                     <div className="space-y-4">
                         <div className="inline-flex items-center gap-2.5">
                             <span className="w-9 h-9 rounded-xl bg-white text-foreground flex items-center justify-center shadow-md">
@@ -44,7 +41,6 @@ export default function ShopFooter() {
                         </p>
                     </div>
 
-                    {/* Cột 2: Thông tin liên hệ */}
                     <div className="space-y-3">
                         <p className="text-xs font-bold uppercase tracking-wider text-white/40">Liên hệ</p>
                         <address className="not-italic space-y-3 text-sm font-medium text-white/80">
@@ -63,7 +59,6 @@ export default function ShopFooter() {
                         </address>
                     </div>
 
-                    {/* Cột 3: Giờ mở cửa & Mạng xã hội */}
                     <div className="space-y-4">
                         <div>
                             <p className="text-xs font-bold uppercase tracking-wider text-white/40 mb-3">Giờ hoạt động</p>
@@ -97,7 +92,6 @@ export default function ShopFooter() {
                 </div>
             </div>
 
-            {/* Thanh bản quyền tràn khung */}
             <div className="border-t border-white/10 bg-black/40">
                 <div className="max-w-6xl mx-auto px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-2">
                     <p className="text-xs text-white/50 text-center sm:text-left">

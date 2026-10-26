@@ -33,9 +33,8 @@ export const formatVND = (n: number) => `${Number(n).toLocaleString("vi-VN")}đ`
 export const normalize = (s: string) =>
     s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").toLowerCase().trim();
 
-
-export const LOGIN_PATH = "/login";
-export const CHECKOUT_PATH = "/checkout";
+export const LOGIN_PATH = "/auth/login";
+export const CHECKOUT_PATH = "/shop/checkout";
 
 
 export function matchesSearch(p: Product, query: string): boolean {
@@ -43,6 +42,22 @@ export function matchesSearch(p: Product, query: string): boolean {
     if (tokens.length === 0) return true;
     const words = normalize(`${p.name} ${p.category?.name ?? ""}`).split(/\s+/);
     return tokens.every((t) => words.some((w) => w.startsWith(t)));
+}
+
+export const CART_STORAGE_KEY = "brewlite_cart_v1";
+export const CART_OWNER_KEY = "brewlite_cart_owner";
+
+export function claimCartForUser(email: string) {
+    try {
+        const owner = localStorage.getItem(CART_OWNER_KEY);
+        if (owner && owner !== email) localStorage.removeItem(CART_STORAGE_KEY);
+        localStorage.setItem(CART_OWNER_KEY, email);
+    } catch {  }
+}
+
+
+export function releaseCartOwner() {
+    try { localStorage.removeItem(CART_OWNER_KEY); } catch {  }
 }
 
 export const sortedSizes = (p: Product): ProductSize[] =>

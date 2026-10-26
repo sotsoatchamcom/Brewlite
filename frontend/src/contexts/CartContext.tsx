@@ -4,9 +4,8 @@ import {
     createContext, useCallback, useContext, useEffect, useMemo, useReducer, useState,
     type ReactNode,
 } from "react";
-import { calcUnitPrice, lineTotal, makeCartKey, type CartItem, type CartTopping } from "@/lib/shop";
+import { CART_STORAGE_KEY, calcUnitPrice, lineTotal, makeCartKey, type CartItem, type CartTopping } from "@/lib/shop";
 
-const STORAGE_KEY = "brewlite_cart_v1";
 
 type Action =
     | { type: "HYDRATE"; items: CartItem[] }
@@ -46,12 +45,14 @@ function reducer(items: CartItem[], a: Action): CartItem[] {
             const newKey = makeCartKey(line.productId, a.next.sizeName, a.next.toppings);
             if (newKey === line.key) return items;
 
+            // Tách `count` ly ra khỏi dòng cũ (xóa dòng nếu tách hết)
             const count = Math.min(Math.max(1, a.count), line.qty);
             const rest = line.qty - count;
             const without = rest > 0
                 ? items.map((i, n) => (n === idx ? { ...i, qty: rest } : i))
                 : items.filter((_, n) => n !== idx);
 
+            // Gộp vào dòng đã có cùng cấu hình, nếu không thì chèn dòng mới ngay sau dòng cũ
             if (without.some((i) => i.key === newKey)) {
                 return without.map((i) => (i.key === newKey ? { ...i, qty: Math.min(i.qty + count, i.maxQty) } : i));
             }
@@ -78,7 +79,9 @@ interface CartContextValue {
     increase: (key: string) => void;
     decrease: (key: string) => void;
     remove: (key: string) => void;
+    /** Đổi size/topping của `count` ly trong một dòng (tách dòng nếu cần). */
     updateLine: (key: string, count: number, next: LineOptions) => void;
+    /** Gọi sau khi thanh toán thành công. */
     clearCart: () => void;
 }
 
@@ -91,7 +94,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     // Nạp localStorage sau khi mount để tránh lỗi hydration mismatch
     useEffect(() => {
         try {
-            const raw = localStorage.getItem(STORAGE_KEY);
+            const raw = localStorage.getItem(CART_STORAGE_KEY);
             const parsed = raw ? JSON.parse(raw) : [];
             if (Array.isArray(parsed)) dispatch({ type: "HYDRATE", items: parsed });
         } catch {
@@ -101,7 +104,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }, []);
 
     useEffect(() => {
-        if (hydrated) localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+        if (hydrated) localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items));
     }, [items, hydrated]);
 
     const addItem = useCallback(

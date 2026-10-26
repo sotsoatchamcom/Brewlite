@@ -8,11 +8,16 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
-import { LOGIN_PATH } from "@/lib/shop";
+import { LOGIN_PATH, releaseCartOwner } from "@/lib/shop";
 
 export default function ShopHeader({ rightSlot }: { rightSlot?: ReactNode }) {
-    const { totalQty, hydrated } = useCart();
+    const { totalQty, hydrated, clearCart } = useCart();
     const { user, isAuthenticated, isLoading, logout } = useAuth();
+    const handleLogout = () => {
+        logout();
+        clearCart(); 
+        releaseCartOwner();
+    };
     const displayName = user?.name || user?.email || "Tài khoản";
 
     return (
@@ -25,7 +30,7 @@ export default function ShopHeader({ rightSlot }: { rightSlot?: ReactNode }) {
             </Link>
 
             <div className="flex items-center gap-2">
-                {/* Người 2: chuông thông báo (chỉ nên hiện khi isAuthenticated) */}
+                {/* chuông thông báo (chỉ nên hiện khi isAuthenticated) */}
                 {rightSlot}
 
                 <Button asChild variant="outline" className="rounded-xl gap-2" aria-label={`Giỏ hàng, ${totalQty} ly`}>
@@ -57,9 +62,9 @@ export default function ShopHeader({ rightSlot }: { rightSlot?: ReactNode }) {
                                 <p className="text-sm font-semibold truncate">{displayName}</p>
                                 {user?.email && <p className="text-xs text-muted-foreground truncate">{user.email}</p>}
                             </DropdownMenuLabel>
-                            {/* mục "Tài khoản" và "Đơn hàng của tôi" */}
+                            {/*  Thêm mục "Tài khoản" và "Đơn hàng của tôi"  */}
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={logout} className="gap-2 cursor-pointer">
+                            <DropdownMenuItem onClick={handleLogout} className="gap-2 cursor-pointer">
                                 <LogOut className="w-4 h-4" /> Đăng xuất
                             </DropdownMenuItem>
                         </DropdownMenuContent>

@@ -18,7 +18,6 @@ export default function CartPage() {
     const router = useRouter();
     const { isAuthenticated, isLoading: authLoading } = useAuth();
 
-    // Khách xem menu/thêm giỏ tự do; chỉ khi thanh toán mới yêu cầu đăng nhập
     const handleCheckout = () => {
         if (isAuthenticated) return router.push(CHECKOUT_PATH);
         toast.info("Vui lòng đăng nhập để thanh toán");

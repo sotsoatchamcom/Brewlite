@@ -2,17 +2,13 @@
 
 import { Button } from "@/components/ui/button";
 
-/**
- * Banner đầu trang menu (kiểu poster card bo góc).
- * Ảnh ly nằm ở public/glass.png. Nút "Xem Menu" cuộn xuống #menu.
- */
+
 export default function HeroBanner() {
   const scrollToMenu = () =>
     document.getElementById("menu")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
     <section className="relative mx-auto -mt-6 mb-8 h-[360px] w-full max-w-6xl overflow-hidden rounded-3xl bg-[#e7d9d0] md:h-[420px] lg:h-[460px]">
-      {/* Chữ góc phải */}
       <div className="pointer-events-none absolute inset-0 px-6">
         <p className="absolute right-6 top-6 hidden text-xs font-bold uppercase tracking-wider text-foreground/80 sm:block">
           Original tea &amp; coffee
@@ -34,8 +30,7 @@ export default function HeroBanner() {
         </Button>
       </div>
 
-      {/* Ly cà phê nằm sát đáy */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
+
       <img
         src="/glass.png"
         alt=""
