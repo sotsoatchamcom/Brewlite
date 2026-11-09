@@ -1,4 +1,9 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -14,6 +19,11 @@ import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), 'uploads'),
+      serveRoot: '/uploads',
+    }),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -26,9 +36,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
     NotificationsModule,
     ReportsModule,
     DashboardModule,
-    // ConfigModule.forRoot({ isGlobal: true }),
   ],
-  controllers: [],
-  providers: [],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}

@@ -12,7 +12,8 @@ import {
     Image as ImageIcon,
 } from "lucide-react";
 import { MOCK_PRODUCTS, MOCK_CATEGORIES } from "@/lib/mockData";
-import { apiFetch, getImageUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
+import { getImageUrl } from "@/components/ui/utils";
 import { EntityThumbnail } from "@/components/EntityThumbnail";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,7 +66,6 @@ export default function ProductsPage() {
         setLoading(true);
         try {
             const [prodRes, catRes] = await Promise.allSettled([
-                // Gọi khớp với GET /admin/products của ProductsController
                 apiFetch<any>("/admin/products?page=1&limit=100").catch(() =>
                     apiFetch<any>("/products?page=1&limit=100")
                 ),
@@ -135,7 +135,7 @@ export default function ProductsPage() {
             description: p.description ?? "",
             isActive: p.isActive ?? true,
             file: null,
-            previewUrl: getImageUrl(p.imageUrl) ?? "",
+            previewUrl: getImageUrl(p.imageUrl, "products") ?? "",
         });
         setDialogOpen(true);
     }
@@ -191,14 +191,12 @@ export default function ProductsPage() {
             }
 
             if (editing) {
-                // PATCH /products/:id
                 await apiFetch(`/products/${editing.id}`, {
                     method: "PATCH",
                     body: bodyData,
                 });
                 toast.success("Cập nhật sản phẩm thành công!");
             } else {
-                // POST /products
                 await apiFetch("/products", {
                     method: "POST",
                     body: bodyData,
@@ -218,13 +216,11 @@ export default function ProductsPage() {
     async function toggleStatus(p: any) {
         try {
             if (!p.isActive) {
-                // Gọi POST /products/:id/restore khớp với Controller
                 await apiFetch(`/products/${p.id}/restore`, {
                     method: "POST",
                 });
                 toast.success(`Đã mở bán lại "${p.name}"`);
             } else {
-                // Gọi DELETE /products/:id
                 await apiFetch(`/products/${p.id}`, {
                     method: "DELETE",
                 });
@@ -317,10 +313,10 @@ export default function ProductsPage() {
                             <td className="px-4 py-3.5">
                                 <div className="flex justify-center">
                                     <EntityThumbnail
-                                        src={product.imageUrl}
+                                        src={getImageUrl(product.imageUrl, "products")}
                                         alt={product.name}
                                         size="xl"
-                                        fallbackIcon={<Package className="w-7 h-7" />}
+                                        fallbackIcon={<Package className="w-7 h-7 text-amber-700/60" />}
                                     />
                                 </div>
                             </td>
@@ -338,7 +334,7 @@ export default function ProductsPage() {
                                         </span>
                                     )}
 
-                                    {/* HIỂN THỊ DANH SÁCH SIZE & PHỤ THU */}
+                                    {/* Danh sách size và phụ thu */}
                                     {product.sizes && product.sizes.length > 0 && (
                                         <div className="flex flex-wrap items-center gap-1.5 mt-2">
                                             {product.sizes.map((s: any) => (
@@ -362,7 +358,6 @@ export default function ProductsPage() {
                                         {Number(product.price).toLocaleString("vi-VN")}đ
                                     </span>
 
-                                    {/* CHI TIẾT TỔNG GIÁ TỪNG SIZE (Giá gốc + phụ thu) */}
                                     {product.sizes && product.sizes.length > 0 && (
                                         <div className="text-[11px] text-muted-foreground mt-1 space-y-0.5">
                                             {product.sizes.map((s: any) => (

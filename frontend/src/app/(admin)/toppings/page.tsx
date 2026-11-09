@@ -10,10 +10,12 @@ import {
     RotateCcw,
     Upload,
     Image as ImageIcon,
+    Check,
 } from "lucide-react";
 import { MOCK_TOPPINGS } from "@/lib/mockData";
 import type { Topping } from "@/lib/types";
-import { apiFetch, getImageUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
+import { getImageUrl } from "@/components/ui/utils";
 import { EntityThumbnail } from "@/components/EntityThumbnail";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,8 +29,14 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
+interface CategoryOption {
+    id: number;
+    name: string;
+}
+
 interface ToppingFormState {
     name: string;
+    categoryIds: number[]; // Mảng chứa nhiều ID danh mục
     price: number;
     isAvailable: boolean;
     file: File | null;
@@ -37,6 +45,7 @@ interface ToppingFormState {
 
 const emptyForm: ToppingFormState = {
     name: "",
+    categoryIds: [],
     price: 10000,
     isAvailable: true,
     file: null,
@@ -45,6 +54,7 @@ const emptyForm: ToppingFormState = {
 
 export default function ToppingsPage() {
     const [toppings, setToppings] = useState<Topping[]>([]);
+    const [categories, setCategories] = useState<CategoryOption[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
     const [dialogOpen, setDialogOpen] = useState(false);
@@ -53,7 +63,7 @@ export default function ToppingsPage() {
     const [deleteId, setDeleteId] = useState<number | string | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
-    // Gọi GET /toppings/admin/all để lấy toàn bộ Topping (kể cả đã ẩn)
+    // 1. Tải danh sách Topping từ backend
     async function loadToppings() {
         setLoading(true);
         try {
@@ -77,8 +87,20 @@ export default function ToppingsPage() {
         }
     }
 
+    // 2. Tải danh sách Categories để chọn
+    async function loadCategories() {
+        try {
+            const res: any = await apiFetch<any>("/categories");
+            const list = Array.isArray(res) ? res : res?.data || [];
+            setCategories(list);
+        } catch (err) {
+            console.error("Lỗi tải danh mục:", err);
+        }
+    }
+
     useEffect(() => {
         loadToppings();
+        loadCategories();
     }, []);
 
     const isToppingAvailable = (t: any) => t.isAvailable ?? t.isActive ?? true;
@@ -93,16 +115,43 @@ export default function ToppingsPage() {
         setDialogOpen(true);
     }
 
-    function openEdit(t: Topping) {
+    function openEdit(t: any) {
         setEditing(t);
+        // Lấy danh sách ID các danh mục mà topping này đang trực thuộc
+        const currentCatIds: number[] = t.categories?.map((c: any) => Number(c.id)) || [];
         setForm({
             name: t.name,
+            categoryIds: currentCatIds,
             price: Number(t.price),
             isAvailable: isToppingAvailable(t),
             file: null,
-            previewUrl: getImageUrl((t as any).imageUrl) ?? "",
+            previewUrl: getImageUrl(t.imageUrl, "toppings") ?? "",
         });
         setDialogOpen(true);
+    }
+
+    // Xử lý bật/tắt từng danh mục khi click vào thẻ badge
+    function handleToggleCategory(catId: number) {
+        setForm((prev) => {
+            const exists = prev.categoryIds.includes(catId);
+            return {
+                ...prev,
+                categoryIds: exists
+                    ? prev.categoryIds.filter((id) => id !== catId)
+                    : [...prev.categoryIds, catId],
+            };
+        });
+    }
+
+    // Chọn tất cả hoặc bỏ chọn tất cả
+    function handleToggleAllCategories() {
+        setForm((prev) => ({
+            ...prev,
+            categoryIds:
+                prev.categoryIds.length === categories.length
+                    ? []
+                    : categories.map((c) => c.id),
+        }));
     }
 
     function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -116,14 +165,22 @@ export default function ToppingsPage() {
         }
     }
 
-    // Gửi multipart/form-data khớp với FileInterceptor('file') bên ToppingsController
     async function handleSave() {
+        if (!form.name.trim()) {
+            toast.error("Vui lòng nhập tên Topping");
+            return;
+        }
+
         setSubmitting(true);
         try {
             const formData = new FormData();
             formData.append("name", form.name.trim());
             formData.append("price", String(Math.round(Number(form.price))));
             formData.append("isAvailable", String(form.isAvailable));
+
+            // Gửi mảng categoryIds dưới dạng chuỗi JSON
+            formData.append("categoryIds", JSON.stringify(form.categoryIds));
+
             if (form.file) {
                 formData.append("file", form.file);
             }
@@ -151,19 +208,14 @@ export default function ToppingsPage() {
         }
     }
 
-    // Đổi trạng thái: Gọi DELETE /toppings/:id để ẩn hoặc PATCH /toppings/:id/restore để khôi phục
     async function toggleAvailable(t: Topping) {
         const available = isToppingAvailable(t);
         try {
             if (!available) {
-                await apiFetch(`/toppings/${t.id}/restore`, {
-                    method: "PATCH",
-                });
+                await apiFetch(`/toppings/${t.id}/restore`, { method: "PATCH" });
                 toast.success(`Đã mở bán lại "${t.name}"`);
             } else {
-                await apiFetch(`/toppings/${t.id}`, {
-                    method: "DELETE",
-                });
+                await apiFetch(`/toppings/${t.id}`, { method: "DELETE" });
                 toast.success(`Đã tạm ẩn "${t.name}"`);
             }
             await loadToppings();
@@ -172,7 +224,6 @@ export default function ToppingsPage() {
         }
     }
 
-    // Xóa mềm Topping qua DELETE /toppings/:id
     async function handleDelete() {
         if (deleteId === null) return;
         try {
@@ -221,7 +272,7 @@ export default function ToppingsPage() {
                             Image
                         </th>
                         <th className="text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-3.5">
-                            Topping Name
+                            Topping & Categories
                         </th>
                         <th className="text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground px-5 py-3.5">
                             Price
@@ -243,8 +294,10 @@ export default function ToppingsPage() {
                             </td>
                         </tr>
                     )}
-                    {filtered.map((topping, idx) => {
+                    {filtered.map((topping: any, idx) => {
                         const available = isToppingAvailable(topping);
+                        const assignedCats: any[] = topping.categories || [];
+
                         return (
                             <tr key={topping.id} className="hover:bg-accent/30 transition-colors">
                                 <td className="px-4 py-4 text-center text-xs font-semibold text-muted-foreground">
@@ -253,17 +306,34 @@ export default function ToppingsPage() {
                                 <td className="px-4 py-3.5">
                                     <div className="flex justify-center">
                                         <EntityThumbnail
-                                            src={(topping as any).imageUrl}
+                                            src={getImageUrl(topping.imageUrl, "toppings")}
                                             alt={topping.name}
                                             size="lg"
-                                            fallbackIcon={<Layers className="w-6 h-6" />}
+                                            fallbackIcon={<Layers className="w-6 h-6 text-amber-700/60" />}
                                         />
                                     </div>
                                 </td>
                                 <td className="px-5 py-4">
-                    <span className="font-semibold text-base text-foreground">
-                      {topping.name}
-                    </span>
+                                    <span className="font-semibold text-base text-foreground block">
+                                        {topping.name}
+                                    </span>
+                                    {/* Danh sách nhãn các danh mục được gán */}
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                        {assignedCats.length > 0 ? (
+                                            assignedCats.map((cat: any) => (
+                                                <span
+                                                    key={cat.id}
+                                                    className="inline-block text-[11px] bg-amber-50 text-amber-900 border border-amber-200/80 px-2 py-0.5 rounded-md font-medium"
+                                                >
+                                                    {cat.name}
+                                                </span>
+                                            ))
+                                        ) : (
+                                            <span className="text-[11px] text-muted-foreground/60 italic">
+                                                Áp dụng toàn bộ menu
+                                            </span>
+                                        )}
+                                    </div>
                                 </td>
                                 <td className="px-5 py-4 text-right font-semibold text-base">
                                     +{Number(topping.price).toLocaleString("vi-VN")}đ
@@ -321,23 +391,25 @@ export default function ToppingsPage() {
                 </table>
             </div>
 
-            {/* Create / Edit Dialog */}
+            {/* MODAL THÊM / SỬA TOPPING HỖ TRỢ CHỌN NHIỀU DANH MỤC */}
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogContent className="rounded-2xl sm:max-w-md">
+                <DialogContent className="rounded-2xl sm:max-w-md max-h-[92vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>{editing ? "Edit Topping" : "New Topping"}</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-1">
+                        {/* 1. Tên Topping */}
                         <div className="space-y-1.5">
-                            <Label>Name *</Label>
+                            <Label>Topping Name *</Label>
                             <Input
                                 value={form.name}
                                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                                placeholder="VD: Trân châu đen, Kem phô mai..."
+                                placeholder="VD: Trân châu trắng, Thạch trái cây..."
                                 className="rounded-xl"
                             />
                         </div>
 
+                        {/* 2. Giá Topping */}
                         <div className="space-y-1.5">
                             <Label>Price (VNĐ) *</Label>
                             <Input
@@ -352,7 +424,52 @@ export default function ToppingsPage() {
                             />
                         </div>
 
-                        {/* Upload ảnh thật qua FileInterceptor('file') */}
+                        {/* 3. CHỌN NHIỀU DANH MỤC (MULTI-BADGE SELECTOR) */}
+                        <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                                <Label>Áp dụng cho Danh mục nào? (Chọn nhiều)</Label>
+                                <button
+                                    type="button"
+                                    onClick={handleToggleAllCategories}
+                                    className="text-xs font-semibold text-primary hover:underline"
+                                >
+                                    {form.categoryIds.length === categories.length
+                                        ? "Bỏ chọn hết"
+                                        : "Chọn tất cả"}
+                                </button>
+                            </div>
+
+                            {/* Khung chứa các thẻ Danh mục bấm chọn linh hoạt */}
+                            <div className="p-2 rounded-xl border border-border bg-accent/20 flex flex-wrap gap-1.5 min-h-[50px] items-center">
+                                {categories.length === 0 ? (
+                                    <span className="text-xs text-muted-foreground">Đang tải danh mục...</span>
+                                ) : (
+                                    categories.map((c) => {
+                                        const isSelected = form.categoryIds.includes(c.id);
+                                        return (
+                                            <button
+                                                type="button"
+                                                key={c.id}
+                                                onClick={() => handleToggleCategory(c.id)}
+                                                className={`text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                                                    isSelected
+                                                        ? "bg-amber-100 border-amber-600 text-amber-950 font-bold shadow-xs ring-1 ring-amber-600/30"
+                                                        : "bg-background border-input text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                                                }`}
+                                            >
+                                                {isSelected && <Check className="w-3.5 h-3.5 text-amber-700 stroke-[3]" />}
+                                                <span>{c.name}</span>
+                                            </button>
+                                        );
+                                    })
+                                )}
+                            </div>
+                            <p className="text-[11px] text-muted-foreground">
+                                * Ví dụ: Bấm chọn cả <b>Trà sữa</b> và <b>Trà trái cây</b> để mở bán topping này cho cả 2 loại đồ uống.
+                            </p>
+                        </div>
+
+                        {/* 4. Upload ảnh Topping */}
                         <div className="space-y-1.5">
                             <Label>Topping Image</Label>
                             <div className="flex items-center gap-4">
@@ -371,11 +488,11 @@ export default function ToppingsPage() {
                                     <div className="flex flex-col items-center justify-center gap-1.5 px-4 py-4 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-accent/50 text-xs font-medium text-muted-foreground hover:text-foreground transition-all">
                                         <Upload className="w-5 h-5" />
                                         <span className="truncate max-w-[200px]">
-                      {form.file ? form.file.name : "Click to upload image"}
-                    </span>
+                                            {form.file ? form.file.name : "Click to upload image"}
+                                        </span>
                                         <span className="text-[11px] text-muted-foreground/70">
-                      PNG, JPG, WEBP up to 5MB
-                    </span>
+                                            PNG, JPG, WEBP up to 5MB
+                                        </span>
                                     </div>
                                     <input
                                         type="file"
@@ -387,6 +504,7 @@ export default function ToppingsPage() {
                             </div>
                         </div>
 
+                        {/* 5. Checkbox Trạng thái bán */}
                         <div className="flex items-center gap-2 pt-1">
                             <input
                                 type="checkbox"
@@ -395,11 +513,14 @@ export default function ToppingsPage() {
                                 onChange={(e) =>
                                     setForm((f) => ({ ...f, isAvailable: e.target.checked }))
                                 }
-                                className="w-4 h-4 rounded"
+                                className="w-4 h-4 rounded cursor-pointer accent-primary"
                             />
-                            <Label htmlFor="toppingAvail">Available for order (Đang bán)</Label>
+                            <Label htmlFor="toppingAvail" className="cursor-pointer">
+                                Available for order (Đang bán)
+                            </Label>
                         </div>
                     </div>
+
                     <DialogFooter>
                         <Button
                             variant="outline"
@@ -419,7 +540,7 @@ export default function ToppingsPage() {
                 </DialogContent>
             </Dialog>
 
-            {/* Delete confirm */}
+            {/* Modal xác nhận ẩn / xóa */}
             <Dialog open={deleteId !== null} onOpenChange={() => setDeleteId(null)}>
                 <DialogContent className="rounded-2xl sm:max-w-sm">
                     <DialogHeader>

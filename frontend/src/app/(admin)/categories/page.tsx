@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import { MOCK_CATEGORIES, MOCK_PRODUCTS } from "@/lib/mockData";
 import type { Category } from "@/lib/types";
-import { apiFetch, getImageUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
+import { getImageUrl } from "@/components/ui/utils";
 import { EntityThumbnail } from "@/components/EntityThumbnail";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,7 +107,7 @@ export default function CategoriesPage() {
             description: c.description ?? "",
             isActive: c.isActive ?? true,
             file: null,
-            previewUrl: getImageUrl((c as any).imageUrl) ?? "",
+            previewUrl: getImageUrl((c as any).imageUrl, "categories") ?? "",
         });
         setDialogOpen(true);
     }
@@ -132,7 +133,6 @@ export default function CategoriesPage() {
         try {
             const formData = new FormData();
             formData.append("name", form.name.trim());
-            // Luôn gửi description (nếu để trống thì gửi chuỗi rỗng "" để xóa mô tả cũ)
             formData.append("description", form.description.trim());
             formData.append("isActive", String(form.isActive));
             if (form.file) {
@@ -162,18 +162,14 @@ export default function CategoriesPage() {
         }
     }
 
-    // Đổi trạng thái Active / Hidden chuẩn theo ràng buộc sản phẩm của Backend
     async function toggleStatus(c: Category) {
         try {
             if (!c.isActive) {
-                // Nếu đang ẩn -> Gọi API Restore (PATCH /categories/:id/restore)
                 await apiFetch(`/categories/${c.id}/restore`, {
                     method: "PATCH",
                 });
                 toast.success(`Đã khôi phục danh mục "${c.name}"`);
             } else {
-                // Nếu đang Active muốn chuyển sang Hidden -> Gọi DELETE /categories/:id
-                // Backend sẽ tự động chặn và báo lỗi nếu _count.products > 0
                 await apiFetch(`/categories/${c.id}`, {
                     method: "DELETE",
                 });
@@ -181,7 +177,6 @@ export default function CategoriesPage() {
             }
             await loadCategories();
         } catch (err: any) {
-            // Hiển thị nguyên văn câu báo lỗi từ Backend: "Không thể xóa! Danh mục này đang chứa X sản phẩm..."
             toast.error(err.message || "Không thể thay đổi trạng thái");
         }
     }
@@ -267,25 +262,25 @@ export default function CategoriesPage() {
                             <td className="px-4 py-3.5">
                                 <div className="flex justify-center">
                                     <EntityThumbnail
-                                        src={(cat as any).imageUrl}
+                                        src={getImageUrl((cat as any).imageUrl, "categories")}
                                         alt={cat.name}
                                         size="lg"
-                                        fallbackIcon={<Coffee className="w-6 h-6" />}
+                                        fallbackIcon={<Coffee className="w-6 h-6 text-amber-700/60" />}
                                     />
                                 </div>
                             </td>
                             <td className="px-5 py-4">
-                  <span className="font-semibold text-base text-foreground">
-                    {cat.name}
-                  </span>
+                                <span className="font-semibold text-base text-foreground">
+                                    {cat.name}
+                                </span>
                             </td>
                             <td className="px-5 py-4 text-muted-foreground text-sm max-w-md">
                                 {cat.description || "—"}
                             </td>
                             <td className="px-5 py-4 text-center">
-                  <span className="inline-flex items-center justify-center min-w-[28px] h-7 px-2.5 rounded-full bg-accent text-xs font-bold">
-                    {getProductCount(cat)}
-                  </span>
+                                <span className="inline-flex items-center justify-center min-w-[28px] h-7 px-2.5 rounded-full bg-accent text-xs font-bold">
+                                    {getProductCount(cat)}
+                                </span>
                             </td>
                             <td className="px-5 py-4 text-center">
                                 <button
@@ -370,7 +365,6 @@ export default function CategoriesPage() {
                             />
                         </div>
 
-                        {/* Khung chọn ảnh lớn và trực quan hơn */}
                         <div className="space-y-1.5">
                             <Label>Category Image</Label>
                             <div className="flex items-center gap-4">
@@ -389,11 +383,11 @@ export default function CategoriesPage() {
                                     <div className="flex flex-col items-center justify-center gap-1.5 px-4 py-4 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-accent/50 text-xs font-medium text-muted-foreground hover:text-foreground transition-all">
                                         <Upload className="w-5 h-5" />
                                         <span className="truncate max-w-[200px]">
-                      {form.file ? form.file.name : "Click to upload image"}
-                    </span>
+                                            {form.file ? form.file.name : "Click to upload image"}
+                                        </span>
                                         <span className="text-[11px] text-muted-foreground/70">
-                      PNG, JPG, WEBP up to 5MB
-                    </span>
+                                            PNG, JPG, WEBP up to 5MB
+                                        </span>
                                     </div>
                                     <input
                                         type="file"
@@ -420,8 +414,8 @@ export default function CategoriesPage() {
                                 Active (Hiển thị trên menu)
                                 {editing && getProductCount(editing) > 0 && (
                                     <span className="block text-[11px] text-amber-600 font-normal">
-                    * Không thể ẩn vì đang có {getProductCount(editing)} sản phẩm
-                  </span>
+                                        * Không thể ẩn vì đang có {getProductCount(editing)} sản phẩm
+                                    </span>
                                 )}
                             </Label>
                         </div>

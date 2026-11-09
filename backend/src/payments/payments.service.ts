@@ -22,7 +22,7 @@ export class PaymentsService {
 
   async create(createPaymentDto: CreatePaymentDto) {
     const { orderId, idempotencyKey, method, simulateFailure } =
-      createPaymentDto;
+        createPaymentDto;
 
     // 1. KIỂM TRA IDEMPOTENCY TRƯỚC (Task 10 - Yêu cầu 2)
     const existingPayment = await this.prisma.payment.findUnique({
@@ -34,9 +34,9 @@ export class PaymentsService {
       return {
         success: existingPayment.status === PaymentStatus.SUCCESS,
         message:
-          existingPayment.status === PaymentStatus.SUCCESS
-            ? 'Thanh toán đã được xử lý thành công trước đó (Idempotent response)'
-            : 'Giao dịch này đã từng thất bại trước đó (Idempotent response)',
+            existingPayment.status === PaymentStatus.SUCCESS
+                ? 'Thanh toán đã được xử lý thành công trước đó (Idempotent response)'
+                : 'Giao dịch này đã từng thất bại trước đó (Idempotent response)',
         isDuplicate: true,
         orderStatus: existingPayment.order?.status,
         data: existingPayment,
@@ -55,42 +55,42 @@ export class PaymentsService {
 
     if (order.status === OrderStatus.PAID) {
       throw new ConflictException(
-        'Đơn hàng này đã được thanh toán thành công!',
+          'Đơn hàng này đã được thanh toán thành công!',
       );
     }
     if (order.status === OrderStatus.CANCELLED) {
       throw new BadRequestException(
-        'Không thể thanh toán cho đơn hàng đã bị hủy!',
+          'Không thể thanh toán cho đơn hàng đã bị hủy!',
       );
     }
     if (order.status === OrderStatus.COMPLETED) {
       throw new BadRequestException(
-        'Không thể thanh toán cho đơn hàng đã hoàn tất!',
+          'Không thể thanh toán cho đơn hàng đã hoàn tất!',
       );
     }
 
     if (
-      order.status !== OrderStatus.PENDING &&
-      order.status !== OrderStatus.PAYMENT_FAILED
+        order.status !== OrderStatus.PENDING &&
+        order.status !== OrderStatus.PAYMENT_FAILED
     ) {
       throw new BadRequestException(
-        `Không thể thanh toán: Đơn hàng đang ở trạng thái [${order.status}], chỉ cho phép thanh toán khi PENDING hoặc PAYMENT_FAILED!`,
+          `Không thể thanh toán: Đơn hàng đang ở trạng thái [${order.status}], chỉ cho phép thanh toán khi PENDING hoặc PAYMENT_FAILED!`,
       );
     }
 
     const paymentAmount = order.finalAmount;
     if (
-      createPaymentDto.amount &&
-      createPaymentDto.amount < order.finalAmount
+        createPaymentDto.amount &&
+        createPaymentDto.amount < order.finalAmount
     ) {
       throw new BadRequestException(
-        `Số tiền thanh toán (${createPaymentDto.amount}đ) không đủ so với tổng cần thanh toán (${order.finalAmount}đ)!`,
+          `Số tiền thanh toán (${createPaymentDto.amount}đ) không đủ so với tổng cần thanh toán (${order.finalAmount}đ)!`,
       );
     }
 
     const transactionId = `TXN_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // 3. MOCK PAYMENT: GIẢ LẬP THẤT BẠI (Task 8 - Có bọc catch P2002)
+    // 3. MOCK PAYMENT: GIẢ LẬP THẤT BẠI (Có bọc catch P2002)
     if (simulateFailure) {
       try {
         return await this.prisma.$transaction(async (tx) => {
@@ -104,7 +104,7 @@ export class PaymentsService {
 
           if (updateOrder.count === 0) {
             throw new ConflictException(
-              'Trạng thái đơn hàng đã thay đổi bởi một giao dịch khác!',
+                'Trạng thái đơn hàng đã thay đổi bởi một giao dịch khác!',
             );
           }
 
@@ -119,6 +119,7 @@ export class PaymentsService {
             },
           });
 
+          // Thông báo cho Admin
           await tx.notification.create({
             data: {
               audience: NotificationAudience.ADMIN,
@@ -129,18 +130,32 @@ export class PaymentsService {
             },
           });
 
+          // Thông báo cho Khách hàng để xuất hiện trên chuông thông báo
+          if (order.userId) {
+            await tx.notification.create({
+              data: {
+                audience: NotificationAudience.CUSTOMER,
+                userId: order.userId,
+                type: NotificationType.PAYMENT_FAILED,
+                title: `Đơn #${order.id}: Thanh toán thất bại`,
+                message: `Giao dịch thanh toán chưa hoàn tất. Bạn có thể bấm vào đây để thanh toán lại!`,
+                orderId: order.id,
+              },
+            });
+          }
+
           return {
             success: false,
             message:
-              'Giao dịch thanh toán thất bại từ cổng thanh toán giả lập!',
+                'Giao dịch thanh toán thất bại từ cổng thanh toán giả lập!',
             orderStatus: OrderStatus.PAYMENT_FAILED,
             data: failedPayment,
           };
         });
       } catch (error) {
         if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2002'
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === 'P2002'
         ) {
           const racePayment = await this.prisma.payment.findUnique({
             where: { idempotencyKey: idempotencyKey! },
@@ -159,7 +174,6 @@ export class PaymentsService {
     // 4. MOCK PAYMENT: NHÁNH THÀNH CÔNG (Khóa nguyên tử atomic update)
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // Khóa lạc quan chống Race Condition giữa 2 key khác nhau
         const pointsEarned = Math.floor(paymentAmount / 10000);
 
         const updateOrderResult = await tx.order.updateMany({
@@ -175,7 +189,7 @@ export class PaymentsService {
 
         if (updateOrderResult.count === 0) {
           throw new ConflictException(
-            'Đơn hàng này vừa được thanh toán thành công bởi một tiến trình khác!',
+              'Đơn hàng này vừa được thanh toán thành công bởi một tiến trình khác!',
           );
         }
 
@@ -199,6 +213,7 @@ export class PaymentsService {
           });
         }
 
+        // Thông báo cho Admin
         await tx.notification.create({
           data: {
             audience: NotificationAudience.ADMIN,
@@ -208,6 +223,20 @@ export class PaymentsService {
             orderId: order.id,
           },
         });
+
+        // Thông báo cho Khách hàng
+        if (order.userId) {
+          await tx.notification.create({
+            data: {
+              audience: NotificationAudience.CUSTOMER,
+              userId: order.userId,
+              type: NotificationType.ORDER_UPDATE,
+              title: `Đơn #${order.id}: Đã thanh toán thành công`,
+              message: `Đơn hàng của bạn đã được chuyển tới quầy pha chế!`,
+              orderId: order.id,
+            },
+          });
+        }
 
         return {
           success: true,
@@ -219,8 +248,8 @@ export class PaymentsService {
       });
     } catch (error) {
       if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
       ) {
         const racePayment = await this.prisma.payment.findUnique({
           where: { idempotencyKey: idempotencyKey! },
@@ -236,10 +265,10 @@ export class PaymentsService {
     }
   }
 
-  // Tích hợp phân trang và lọc chuẩn theo QueryPaymentDto
+  // Tích hợp phân trang và lọc chuẩn, ép kiểu Number an toàn
   async findAll(query?: QueryPaymentDto) {
-    const page = query?.page || 1;
-    const limit = query?.limit || 20;
+    const page = Number(query?.page) || 1;
+    const limit = Number(query?.limit) || 20;
     const skip = (page - 1) * limit;
 
     const where: Prisma.PaymentWhereInput = {

@@ -9,6 +9,12 @@ export class QueryToppingDto {
   @IsString()
   search?: string;
 
+  @ApiPropertyOptional({ description: 'Lọc topping theo ID danh mục' })
+  @Type(() => Number)
+  @IsOptional()
+  @IsInt()
+  categoryId?: number;
+
   @ApiPropertyOptional({
     type: Number,
     default: 1,
@@ -22,7 +28,7 @@ export class QueryToppingDto {
 
   @ApiPropertyOptional({
     type: Number,
-    default: 20,
+    default: 50,
     maximum: 100,
     description: 'Số lượng mỗi trang',
   })
@@ -31,5 +37,5 @@ export class QueryToppingDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  limit: number = 20;
+  limit: number = 50;
 }

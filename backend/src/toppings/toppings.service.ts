@@ -18,12 +18,37 @@ export class ToppingsService {
       throw new ConflictException('Tên topping đã tồn tại!');
     }
 
-    return this.prisma.topping.create({ data: dto });
+    // Gom categoryId hoặc categoryIds vào danh sách ID duy nhất
+    let catIds: number[] = [];
+    if (dto.categoryId) {
+      catIds.push(Number(dto.categoryId));
+    }
+    if (Array.isArray(dto.categoryIds)) {
+      catIds.push(...dto.categoryIds.map(Number));
+    }
+    catIds = Array.from(new Set(catIds.filter((id) => !isNaN(id) && id > 0)));
+
+    const { categoryId, categoryIds, ...data } = dto;
+
+    return this.prisma.topping.create({
+      data: {
+        ...data,
+        categories:
+            catIds.length > 0
+                ? { connect: catIds.map((id) => ({ id })) }
+                : undefined,
+      },
+      include: {
+        categories: {
+          select: { id: true, name: true },
+        },
+      },
+    });
   }
 
-  // Hỗ trợ phân trang, tìm kiếm và lọc trạng thái ẩn/hiện
+  // Hỗ trợ phân trang, tìm kiếm, lọc theo danh mục và trạng thái ẩn/hiện
   async findAll(query: QueryToppingDto, includeHidden: boolean = false) {
-    const { search, page, limit } = query;
+    const { search, categoryId, page = 1, limit = 50 } = query;
     const skip = (page - 1) * limit;
 
     const whereCondition: any = {};
@@ -33,7 +58,13 @@ export class ToppingsService {
     }
 
     if (search) {
-      whereCondition.name = { contains: search };
+      whereCondition.name = { contains: search, mode: 'insensitive' };
+    }
+
+    if (categoryId) {
+      whereCondition.categories = {
+        some: { id: Number(categoryId) },
+      };
     }
 
     const [data, total] = await Promise.all([
@@ -41,6 +72,11 @@ export class ToppingsService {
         where: whereCondition,
         skip,
         take: limit,
+        include: {
+          categories: {
+            select: { id: true, name: true },
+          },
+        },
         orderBy: { id: 'desc' },
       }),
       this.prisma.topping.count({ where: whereCondition }),
@@ -60,11 +96,16 @@ export class ToppingsService {
   async findOne(id: number, includeHidden: boolean = false) {
     const topping = await this.prisma.topping.findUnique({
       where: { id },
+      include: {
+        categories: {
+          select: { id: true, name: true },
+        },
+      },
     });
 
     if (!topping || (!topping.isAvailable && !includeHidden)) {
       throw new NotFoundException(
-        `Không tìm thấy topping ID ${id} hoặc đã ngừng bán`,
+          `Không tìm thấy topping ID ${id} hoặc đã ngừng bán`,
       );
     }
     return topping;
@@ -82,9 +123,33 @@ export class ToppingsService {
       }
     }
 
+    const hasCategoryUpdate =
+        dto.categoryId !== undefined || dto.categoryIds !== undefined;
+
+    let catIds: number[] = [];
+    if (dto.categoryId) {
+      catIds.push(Number(dto.categoryId));
+    }
+    if (Array.isArray(dto.categoryIds)) {
+      catIds.push(...dto.categoryIds.map(Number));
+    }
+    catIds = Array.from(new Set(catIds.filter((cid) => !isNaN(cid) && cid > 0)));
+
+    const { categoryId, categoryIds, ...data } = dto;
+
     return this.prisma.topping.update({
       where: { id },
-      data: dto,
+      data: {
+        ...data,
+        categories: hasCategoryUpdate
+            ? { set: catIds.map((cid) => ({ id: cid })) }
+            : undefined,
+      },
+      include: {
+        categories: {
+          select: { id: true, name: true },
+        },
+      },
     });
   }
 
@@ -94,14 +159,25 @@ export class ToppingsService {
     return this.prisma.topping.update({
       where: { id },
       data: { isAvailable: false },
+      include: {
+        categories: {
+          select: { id: true, name: true },
+        },
+      },
     });
   }
 
   async restore(id: number) {
     await this.findOne(id, true);
+
     return this.prisma.topping.update({
       where: { id },
       data: { isAvailable: true },
+      include: {
+        categories: {
+          select: { id: true, name: true },
+        },
+      },
     });
   }
 }

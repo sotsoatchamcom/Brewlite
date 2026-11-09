@@ -2,21 +2,28 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
+  Logger,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { QueryOrderDto } from './dto/query-order.dto';
 import {
   OrderStatus,
   DiscountType,
-  NotificationType,
-  NotificationAudience,
 } from '@prisma/client';
 
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(OrdersService.name);
+
+  constructor(
+      private prisma: PrismaService,
+      private notificationsService: NotificationsService,
+  ) {}
 
   // =========================================================================
   // TASK 10 (Yêu cầu 1): ORDER STATE MACHINE CHUẨN MỤC 9.1
@@ -27,7 +34,12 @@ export class OrdersService {
       OrderStatus.PAYMENT_FAILED,
       OrderStatus.CANCELLED,
     ],
-    [OrderStatus.PAYMENT_FAILED]: [OrderStatus.PENDING, OrderStatus.CANCELLED],
+    // Cho phép thanh toán lại chuyển thẳng sang PAID hoặc tự động huỷ sang CANCELLED
+    [OrderStatus.PAYMENT_FAILED]: [
+      OrderStatus.PENDING,
+      OrderStatus.PAID,
+      OrderStatus.CANCELLED,
+    ],
     [OrderStatus.PAID]: [OrderStatus.PREPARING, OrderStatus.CANCELLED],
     [OrderStatus.PREPARING]: [OrderStatus.READY],
     [OrderStatus.READY]: [OrderStatus.COMPLETED],
@@ -41,6 +53,44 @@ export class OrdersService {
       throw new BadRequestException(
           `Chuyển trạng thái không hợp lệ: Không thể chuyển từ [${current}] sang [${next}]!`,
       );
+    }
+  }
+
+  // =========================================================================
+  // CRON JOB: TỰ ĐỘNG HỦY ĐƠN PENDING & PAYMENT_FAILED QUÁ 15 PHÚT
+  // =========================================================================
+  @Cron(CronExpression.EVERY_MINUTE)
+  async autoCancelExpiredPendingOrders() {
+    const EXPIRE_MINUTES = 15;
+    const thresholdTime = new Date(Date.now() - EXPIRE_MINUTES * 60 * 1000);
+
+    // 1. Tìm các đơn PENDING hoặc PAYMENT_FAILED tạo trước ngưỡng 15 phút
+    const expiredOrders = await this.prisma.order.findMany({
+      where: {
+        status: { in: [OrderStatus.PENDING, OrderStatus.PAYMENT_FAILED] },
+        createdAt: { lte: thresholdTime },
+      },
+      select: { id: true },
+    });
+
+    if (expiredOrders.length === 0) return;
+
+    this.logger.warn(
+        `Phát hiện ${expiredOrders.length} đơn hàng PENDING/PAYMENT_FAILED quá hạn ${EXPIRE_MINUTES} phút. Đang xử lý tự động hủy...`,
+    );
+
+    // 2. Chuyển sang CANCELLED (tự động hoàn tồn kho, hoàn coupon và gửi thông báo)
+    for (const item of expiredOrders) {
+      try {
+        await this.update(item.id, { status: OrderStatus.CANCELLED });
+        this.logger.log(
+            `Đã tự động hủy đơn #${item.id} và hoàn trả tồn kho thành công.`,
+        );
+      } catch (err: any) {
+        this.logger.error(
+            `Lỗi khi tự động hủy đơn #${item.id}: ${err.message}`,
+        );
+      }
     }
   }
 
@@ -69,7 +119,6 @@ export class OrdersService {
 
       // 2. Duyệt qua từng món trong giỏ hàng
       for (const item of items) {
-        // Nạp sản phẩm kèm Category và danh sách Topping hợp lệ của danh mục
         const product = await tx.product.findUnique({
           where: { id: item.productId },
           include: {
@@ -89,28 +138,25 @@ export class OrdersService {
           );
         }
 
-        // BỔ SUNG 1: Chặn sản phẩm đã bị ẩn / ngừng kinh doanh
         if (!product.isActive) {
           throw new BadRequestException(
               `Sản phẩm "${product.name}" hiện đã ngừng kinh doanh hoặc tạm thời hết phục vụ!`,
           );
         }
 
-        // BỔ SUNG 2: Chặn nếu danh mục cha bị ẩn
         if (product.category && !product.category.isActive) {
           throw new BadRequestException(
               `Danh mục "${product.category.name}" hiện đang tạm ngừng phục vụ!`,
           );
         }
 
-        // Kiểm tra tồn kho
         if (product.stock < item.quantity) {
           throw new BadRequestException(
               `Sản phẩm "${product.name}" không đủ tồn kho (Còn: ${product.stock}, yêu cầu: ${item.quantity})!`,
           );
         }
 
-        // TASK 10 (Yêu cầu 3): OPTIMISTIC LOCKING VỚI CỘT VERSION
+        // TASK 10 (Yêu cầu 3): OPTIMISTIC LOCKING VỚI CỘT VERSION VÀ RÀNG BUỘC TỒN KHO
         const updateResult = await tx.product.updateMany({
           where: {
             id: product.id,
@@ -124,12 +170,12 @@ export class OrdersService {
         });
 
         if (updateResult.count === 0) {
-          throw new BadRequestException(
+          throw new ConflictException(
               `Sản phẩm "${product.name}" vừa có biến động tồn kho do người khác đặt cùng lúc, vui lòng thử lại!`,
           );
         }
 
-        // 3. Tra cứu Size & phụ thu (Kiểm tra hợp lệ chặt chẽ)
+        // 3. Tra cứu Size & Phụ thu
         const targetSize = (item.size || 'M').toUpperCase();
         const availableSizes = await tx.productSize.findMany({
           where: { productId: product.id },
@@ -139,7 +185,6 @@ export class OrdersService {
             (s) => s.name.toUpperCase() === targetSize && s.isAvailable,
         );
 
-        // BỔ SUNG 3: Nếu sản phẩm có cấu hình size mà chọn size không hợp lệ/đang ẩn -> Chặn lại
         if (availableSizes.length > 0 && !productSize) {
           throw new BadRequestException(
               `Size "${targetSize}" không khả dụng cho sản phẩm "${product.name}"!`,
@@ -158,7 +203,6 @@ export class OrdersService {
           const allowedToppings = product.category?.toppings || [];
           const allowedToppingIds = new Set(allowedToppings.map((t) => t.id));
 
-          // Chặn nếu chọn topping không thuộc danh mục món (Cà phê không có topping, Trà trái cây chỉ có 2 loại...)
           const hasInvalidTopping = item.toppingIds.some(
               (id) => !allowedToppingIds.has(id),
           );
@@ -275,7 +319,6 @@ export class OrdersService {
       }
 
       const finalAmount = Math.max(0, subtotal - discountAmount);
-      // TASK 10 (Yêu cầu 4): Tích lũy 10.000đ = 1 điểm (chỉ lưu dự kiến vào đơn)
       const pointsEarned = Math.floor(finalAmount / 10000);
 
       // 6. Lưu đơn hàng
@@ -306,16 +349,22 @@ export class OrdersService {
         },
       });
 
-      // 7. Tạo thông báo mới cho Admin Dashboard
-      await tx.notification.create({
-        data: {
-          audience: NotificationAudience.ADMIN,
-          type: NotificationType.ORDER_NEW,
-          title: `Đơn hàng mới #${newOrder.id}`,
-          message: `Khách hàng vừa đặt đơn mới trị giá ${finalAmount.toLocaleString('vi-VN')}đ. Đang chờ thanh toán.`,
-          orderId: newOrder.id,
-        },
-      });
+      // 7. Bắn thông báo Đơn mới cho Admin
+      await this.notificationsService.notifyOrderCreated(
+          {
+            id: newOrder.id,
+            userId: newOrder.userId,
+            finalAmount: newOrder.finalAmount,
+            user: newOrder.user,
+          },
+          tx,
+      );
+
+      // 8. Đồng bộ cảnh báo sắp hết hàng nếu tồn kho xuống thấp
+      await this.notificationsService.syncStockAlerts(
+          items.map((i) => i.productId),
+          tx,
+      );
 
       return {
         success: true,
@@ -335,13 +384,13 @@ export class OrdersService {
   // TASK 9: TRA CỨU ĐƠN HÀNG
   // =========================================================================
   async findAll(query?: QueryOrderDto) {
-    const page = query?.page || 1;
-    const limit = query?.limit || 100;
+    const page = Number(query?.page) || 1;
+    const limit = Number(query?.limit) || 100;
     const skip = (page - 1) * limit;
 
     const where: any = {};
     if (query?.status) where.status = query.status;
-    if (query?.userId) where.userId = query.userId;
+    if (query?.userId) where.userId = Number(query.userId);
 
     const [data, total] = await Promise.all([
       this.prisma.order.findMany({
@@ -427,7 +476,7 @@ export class OrdersService {
       return this.prisma.$transaction(async (tx) => {
         // 1. NẾU HỦY ĐƠN (CANCELLED)
         if (updateOrderDto.status === OrderStatus.CANCELLED) {
-          // 1.1. Hoàn lại tồn kho theo số lượng và tăng version
+          // 1.1. Hoàn lại tồn kho theo số lượng và tăng version (Optimistic Locking)
           for (const item of order.orderItems) {
             await tx.product.update({
               where: { id: item.productId },
@@ -477,17 +526,6 @@ export class OrdersService {
               });
             }
           }
-
-          // Bắn thông báo ĐƠN BỊ HỦY cho Admin
-          await tx.notification.create({
-            data: {
-              audience: NotificationAudience.ADMIN,
-              type: NotificationType.ORDER_CANCELLED,
-              title: `Đơn hàng #${order.id} đã bị hủy`,
-              message: `Đơn hàng #${order.id} đã chuyển sang trạng thái CANCELLED. Tồn kho và coupon đã được hoàn trả.`,
-              orderId: order.id,
-            },
-          });
         }
 
         // 2. NẾU CHUYỂN SANG PAID -> Cộng điểm tích lũy vào tài khoản User
@@ -505,20 +543,27 @@ export class OrdersService {
           }
         }
 
-        // Bắn thông báo CẬP NHẬT TRẠNG THÁI cho Admin (nếu không phải là hủy)
-        if (updateOrderDto.status !== OrderStatus.CANCELLED) {
-          await tx.notification.create({
-            data: {
-              audience: NotificationAudience.ADMIN,
-              type: NotificationType.ORDER_UPDATE,
-              title: `Cập nhật đơn hàng #${order.id}`,
-              message: `Đơn hàng #${order.id} đã chuyển sang trạng thái [${updateOrderDto.status}].`,
-              orderId: order.id,
+        // 3. TỰ ĐỘNG PHÁT SINH THÔNG BÁO CHO CẢ ADMIN VÀ KHÁCH HÀNG
+        await this.notificationsService.notifyOrderStatusChanged(
+            {
+              id: order.id,
+              userId: order.userId,
+              finalAmount: order.finalAmount,
+              user: order.user,
             },
-          });
+            updateOrderDto.status,
+            tx,
+        );
+
+        // 4. Đồng bộ lại cảnh báo tồn kho nếu có hoàn kho (Hủy đơn)
+        if (updateOrderDto.status === OrderStatus.CANCELLED) {
+          await this.notificationsService.syncStockAlerts(
+              order.orderItems.map((item) => item.productId),
+              tx,
+          );
         }
 
-        // 3. Cập nhật trạng thái đơn (nếu hủy thì đặt loyaltyPointsEarned = 0 để tránh trừ lặp)
+        // 5. Cập nhật trạng thái đơn
         const updatedOrder = await tx.order.update({
           where: { id },
           data: {

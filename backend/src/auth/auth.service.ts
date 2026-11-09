@@ -2,25 +2,25 @@ import {
   Injectable,
   UnauthorizedException,
   ForbiddenException,
+  BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { UsersService } from '../users/users.service'; // Import UsersService
-import { CreateUserDto } from '../users/dto/create-user.dto'; // Import DTO
-import { Role } from '@prisma/client'; // Import Role Enum
+import { UsersService } from '../users/users.service';
+import { CreateUserDto } from '../users/dto/create-user.dto';
+import { ChangePasswordDto } from '../users/dto/change-password.dto';import { Role } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private prisma: PrismaService,
-    private jwtService: JwtService,
-    private usersService: UsersService, // Tiêm UsersService vào để dùng chung logic tạo user
+      private prisma: PrismaService,
+      private jwtService: JwtService,
+      private usersService: UsersService,
   ) {}
 
-  // Bổ sung hàm đăng ký đáp ứng Task 7
   async register(createUserDto: CreateUserDto) {
-    // Khách hàng vãng lai đăng ký qua luồng này luôn bị ép quyền CUSTOMER
     return this.usersService.create(createUserDto, Role.CUSTOMER);
   }
 
@@ -28,22 +28,20 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
       throw new UnauthorizedException(
-        'Tài khoản hoặc mật khẩu không chính xác',
+          'Tài khoản hoặc mật khẩu không chính xác',
       );
     }
 
-    // CHỐT CHẶN: Kiểm tra trạng thái hoạt động (isActive)
     if (!user.isActive) {
       throw new ForbiddenException(
-        'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Quản trị viên để biết thêm chi tiết.',
+          'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Quản trị viên để biết thêm chi tiết.',
       );
     }
 
-    // So sánh mật khẩu với passwordHash trong cơ sở dữ liệu
     const isPasswordMatching = await bcrypt.compare(pass, user.passwordHash);
     if (!isPasswordMatching) {
       throw new UnauthorizedException(
-        'Tài khoản hoặc mật khẩu không chính xác',
+          'Tài khoản hoặc mật khẩu không chính xác',
       );
     }
 
@@ -57,6 +55,52 @@ export class AuthService {
         role: user.role,
         loyaltyPoints: user.loyaltyPoints,
       },
+    };
+  }
+
+  // ========================================================
+  // ENDPOINT ĐỔI MẬT KHẨU (Khớp với ChangePasswordDto & passwordHash)
+  // ========================================================
+  async changePassword(userId: number, dto: ChangePasswordDto) {
+    if (dto.newPassword !== dto.confirmNewPassword) {
+      throw new BadRequestException('Xác nhận mật khẩu mới không khớp');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy thông tin tài khoản');
+    }
+
+    // 1. So khớp mật khẩu cũ với cột passwordHash trong DB
+    const isOldPasswordMatch = await bcrypt.compare(
+        dto.oldPassword,
+        user.passwordHash,
+    );
+    if (!isOldPasswordMatch) {
+      throw new BadRequestException('Mật khẩu cũ không chính xác');
+    }
+
+    // 2. Không cho phép đặt trùng mật khẩu cũ
+    const isSameAsOld = await bcrypt.compare(
+        dto.newPassword,
+        user.passwordHash,
+    );
+    if (isSameAsOld) {
+      throw new BadRequestException(
+          'Mật khẩu mới không được trùng với mật khẩu hiện tại',
+      );
+    }
+
+    // 3. Băm mật khẩu mới và cập nhật vào cột passwordHash
+    const newPasswordHash = await bcrypt.hash(dto.newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: newPasswordHash },
+    });
+
+    return {
+      success: true,
+      message: 'Đổi mật khẩu thành công',
     };
   }
 }

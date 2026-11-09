@@ -27,7 +27,7 @@ export class CreatePaymentDto {
   @ApiPropertyOptional({
     example: 65000,
     description:
-      'Số tiền thanh toán (bỏ trống sẽ tự động lấy finalAmount của đơn)',
+        'Số tiền thanh toán (bỏ trống sẽ tự động lấy finalAmount của đơn)',
   })
   @IsOptional()
   @IsNumber({}, { message: 'Số tiền thanh toán phải là số' })
@@ -36,7 +36,7 @@ export class CreatePaymentDto {
   @ApiPropertyOptional({
     example: 'idem-uuid-9876-5432-10',
     description:
-      'Idempotency-Key (Có thể truyền qua Body này hoặc qua HTTP Header)',
+        'Idempotency-Key (Có thể truyền qua Body này hoặc qua HTTP Header)',
   })
   @IsOptional()
   @IsString()
