@@ -12,7 +12,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // 1. Thêm tiền tố toàn cục /api cho toàn bộ endpoint
-  app.setGlobalPrefix('api');
+ // app.setGlobalPrefix('api');
 
   // 2. Đảm bảo thư mục uploads luôn tồn tại khi chạy cục bộ để không bị crash
   const uploadDir = join(process.cwd(), 'uploads');
