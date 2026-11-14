@@ -62,13 +62,12 @@ export default function ProductCard({
                 )}
 
                 <h3 className="font-bold text-[#2B2118] text-sm leading-snug line-clamp-2">
-                    <button
-                        type="button"
-                        onClick={() => !soldOut && onSelect(product)}
-                        className="text-left hover:text-[#B45F2B] transition-colors focus:outline-none"
+                    <Link
+                        href={`/shop/products/${product.id}`}
+                        className="hover:text-[#B45F2B] transition-colors focus:outline-none after:absolute after:inset-0 after:z-0"
                     >
                         {product.name}
-                    </button>
+                    </Link>
                 </h3>
 
                 <p className="font-extrabold text-[#B45F2B] text-base mt-auto pt-2.5 tracking-tight">
