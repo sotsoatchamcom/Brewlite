@@ -497,7 +497,7 @@ export class OrdersService {
             });
           }
 
-          // 1.3. THU HỒI ĐIỂM TÍCH LŨY: Áp dụng cho các đơn đã thanh toán trước khi hủy
+          // 1.3. THU HỒI ĐIỂM TÍCH LŨY: Chặn hủy nếu khách không còn đủ điểm để thu hồi
           const paidStatuses: OrderStatus[] = [
             OrderStatus.PAID,
             OrderStatus.PREPARING,
@@ -512,19 +512,19 @@ export class OrdersService {
             });
 
             const currentPoints = customer?.loyaltyPoints || 0;
-            const pointsToDeduct = Math.min(
-                currentPoints,
-                order.loyaltyPointsEarned,
-            );
 
-            if (pointsToDeduct > 0) {
-              await tx.user.update({
-                where: { id: order.userId },
-                data: {
-                  loyaltyPoints: { decrement: pointsToDeduct },
-                },
-              });
+            if (currentPoints < order.loyaltyPointsEarned) {
+              throw new BadRequestException(
+                  `Không thể hủy đơn vì bạn đã sử dụng điểm thưởng tích lũy từ đơn hàng này (Cần thu hồi ${order.loyaltyPointsEarned} điểm, hiện còn ${currentPoints} điểm)!`,
+              );
             }
+
+            await tx.user.update({
+              where: { id: order.userId },
+              data: {
+                loyaltyPoints: { decrement: order.loyaltyPointsEarned },
+              },
+            });
           }
         }
 

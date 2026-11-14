@@ -48,6 +48,9 @@ export default function OrderHistoryPage() {
     const [repayOrder, setRepayOrder] = useState<any | null>(null);
     const [paying, setPaying] = useState(false);
 
+    // State theo dõi đơn hàng đang thực hiện thao tác huỷ
+    const [cancellingId, setCancellingId] = useState<number | null>(null);
+
     const loadOrders = useCallback(async (isSilent = false) => {
         if (!isSilent) setRefreshing(true);
         try {
@@ -130,6 +133,24 @@ export default function OrderHistoryPage() {
             await loadOrders(false);
         } finally {
             setPaying(false);
+        }
+    };
+
+    // Xử lý huỷ đơn hàng qua endpoint riêng của khách (PENDING / PAYMENT_FAILED / PAID -> CANCELLED)
+    const handleCancelOrder = async (orderId: number) => {
+        if (!window.confirm(`Bạn có chắc chắn muốn huỷ đơn #${orderId} không?`)) return;
+
+        setCancellingId(orderId);
+        try {
+            await apiFetch(`/orders/${orderId}/cancel`, {
+                method: "PATCH",
+            });
+            toast.success(`Đã huỷ đơn hàng #${orderId} thành công!`);
+            await loadOrders(false);
+        } catch (err: any) {
+            toast.error(err.message || "Không thể huỷ đơn hàng lúc này");
+        } finally {
+            setCancellingId(null);
         }
     };
 
@@ -216,6 +237,7 @@ export default function OrderHistoryPage() {
                             const isReady = order.status === "READY";
                             const isFailed = order.status === "PAYMENT_FAILED";
                             const isCancelled = order.status === "CANCELLED";
+                            const canCancel = ["PENDING", "PAYMENT_FAILED", "PAID"].includes(order.status);
 
                             return (
                                 <div
@@ -381,6 +403,32 @@ export default function OrderHistoryPage() {
                                                     );
                                                 })}
                                             </div>
+                                        </div>
+                                    )}
+
+                                    {/* NÚT HUỶ ĐƠN HÀNG (Khi đơn ở trạng thái PENDING / PAYMENT_FAILED / PAID) */}
+                                    {canCancel && (
+                                        <div className="mt-3 pt-3 border-t border-[#E8E2D9] flex justify-end">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={cancellingId === order.id}
+                                                onClick={() => handleCancelOrder(order.id)}
+                                                className="rounded-xl border-[#A12B1F]/40 text-[#A12B1F] bg-[#FBE9E7]/40 hover:bg-[#FBE9E7] hover:text-[#A12B1F] text-xs font-bold h-8 px-3 flex items-center gap-1.5"
+                                            >
+                                                {cancellingId === order.id ? (
+                                                    <>
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                        <span>Đang huỷ...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <X className="w-3.5 h-3.5" />
+                                                        <span>Huỷ đơn hàng</span>
+                                                    </>
+                                                )}
+                                            </Button>
                                         </div>
                                     )}
                                 </div>

@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { Role } from '@prisma/client';
+import { Role, OrderStatus } from '@prisma/client';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { OrdersService } from './orders.service';
@@ -37,14 +37,14 @@ export class OrdersController {
   @ApiBearerAuth()
   @ApiOperation({
     summary:
-      'Tạo đơn hàng mới (Task 6 & Task 7 - Tự động nhận diện User qua JWT Token)',
+        'Tạo đơn hàng mới (Task 6 & Task 7 - Tự động nhận diện User qua JWT Token)',
   })
   create(@Req() req: any, @Body() createOrderDto: CreateOrderDto) {
     const currentUserId = req.user?.id || req.user?.userId;
 
     if (!currentUserId) {
       throw new BadRequestException(
-        'Không tìm thấy thông tin tài khoản! Vui lòng đăng nhập qua nút Authorize.',
+          'Không tìm thấy thông tin tài khoản! Vui lòng đăng nhập qua nút Authorize.',
       );
     }
 
@@ -67,6 +67,35 @@ export class OrdersController {
     return this.ordersService.findByUserId(currentUserId);
   }
 
+  @Patch(':id/cancel')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+        'Khách hàng tự huỷ đơn hàng của chính mình (PENDING / PAYMENT_FAILED / PAID -> CANCELLED)',
+  })
+  async cancelMyOrder(
+      @Req() req: any,
+      @Param('id', ParseIntPipe) id: number,
+  ) {
+    const currentUserId = req.user?.id || req.user?.userId;
+
+    if (!currentUserId) {
+      throw new BadRequestException('Vui lòng đăng nhập để thực hiện thao tác!');
+    }
+
+    const order = await this.ordersService.findOne(id);
+
+    // Chặn khách hàng huỷ đơn của tài khoản khác
+    if (req.user?.role !== Role.ADMIN && order.userId !== Number(currentUserId)) {
+      throw new ForbiddenException(
+          'Bạn không có quyền huỷ đơn hàng của người khác!',
+      );
+    }
+
+    return this.ordersService.update(id, { status: OrderStatus.CANCELLED });
+  }
+
   // =========================================================================
   // 2. DÙNG CHUNG (ADMIN XEM HẾT, KHÁCH HÀNG CHỈ XEM ĐƠN CỦA MÌNH)
   // =========================================================================
@@ -85,7 +114,7 @@ export class OrdersController {
     // Chặn nếu không phải Admin và cũng không phải chủ sở hữu của đơn
     if (user?.role !== Role.ADMIN && order.userId !== currentUserId) {
       throw new ForbiddenException(
-        'Bạn không có quyền xem chi tiết đơn hàng của người khác!',
+          'Bạn không có quyền xem chi tiết đơn hàng của người khác!',
       );
     }
 
@@ -97,7 +126,7 @@ export class OrdersController {
   // =========================================================================
 
   @Get()
-  @UseGuards(AuthGuard('jwt'), RolesGuard) //
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({
@@ -113,11 +142,11 @@ export class OrdersController {
   @ApiBearerAuth()
   @ApiOperation({
     summary:
-      'Cập nhật trạng thái đơn hàng (Task 10 - Order State Machine - Chỉ Admin)',
+        'Cập nhật trạng thái đơn hàng (Task 10 - Order State Machine - Chỉ Admin)',
   })
   updateStatus(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateOrderDto: UpdateOrderDto,
+      @Param('id', ParseIntPipe) id: number,
+      @Body() updateOrderDto: UpdateOrderDto,
   ) {
     return this.ordersService.update(id, updateOrderDto);
   }
@@ -128,8 +157,8 @@ export class OrdersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Cập nhật thông tin đơn hàng (Chỉ Admin)' })
   update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateOrderDto: UpdateOrderDto,
+      @Param('id', ParseIntPipe) id: number,
+      @Body() updateOrderDto: UpdateOrderDto,
   ) {
     return this.ordersService.update(id, updateOrderDto);
   }
